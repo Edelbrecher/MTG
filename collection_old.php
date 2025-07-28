@@ -28,15 +28,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Get all cards for current user (JavaScript handles filtering)
-$stmt = $pdo->prepare("SELECT * FROM collections WHERE user_id = ? ORDER BY added_at DESC");
-$stmt->execute([$_SESSION['user_id']]);
+// Get filters
+$color_filter = $_GET['color'] ?? '';
+$type_filter = $_GET['type'] ?? '';
+$search_filter = $_GET['search'] ?? '';
+
+// Build query with filters
+$where_conditions = ["user_id = ?"];
+$params = [$_SESSION['user_id']];
+
+if (!empty($color_filter)) {
+    $where_conditions[] = "JSON_CONTAINS(card_data, ?, '$.colors')";
+    $params[] = json_encode($color_filter);
+}
+
+if (!empty($type_filter)) {
+    $where_conditions[] = "JSON_EXTRACT(card_data, '$.type_line') LIKE ?";
+    $params[] = "%{$type_filter}%";
+}
+
+if (!empty($search_filter)) {
+    $where_conditions[] = "card_name LIKE ?";
+    $params[] = "%{$search_filter}%";
+}
+
+$where_clause = implode(' AND ', $where_conditions);
+
+// Get collection
+$stmt = $pdo->prepare("
+    SELECT id, card_name, card_data, quantity, added_at 
+    FROM collections 
+    WHERE {$where_clause}
+    ORDER BY card_name ASC
+");
+$stmt->execute($params);
 $collection = $stmt->fetchAll();
 
-// Get user information
-$stmt = $pdo->prepare("SELECT username FROM users WHERE id = ?");
-$stmt->execute([$_SESSION['user_id']]);
-$user = $stmt->fetch();
+function fetchCardData($card_name) {
+    $url = "https://api.scryfall.com/cards/named?exact=" . urlencode($card_name);
+    
+    $context = stream_context_create([
+        'http' => [
+            'timeout' => 10,
+            'user_agent' => 'MTG Collection Manager/1.0'
+        ]
+    ]);
+    
+    $response = @file_get_contents($url, false, $context);
+    
+    if ($response === false) {
+        return null;
+    }
+    
+    $data = json_decode($response, true);
+    
+    if (!$data || isset($data['object']) && $data['object'] === 'error') {
+        return null;
+    }
+    
+    // Extract relevant data
+    return [
+        'name' => $data['name'] ?? '',
+        'mana_cost' => $data['mana_cost'] ?? '',
+        'cmc' => $data['cmc'] ?? 0,
+        'type_line' => $data['type_line'] ?? '',
+        'oracle_text' => $data['oracle_text'] ?? '',
+        'colors' => $data['colors'] ?? [],
+        'color_identity' => $data['color_identity'] ?? [],
+        'power' => $data['power'] ?? null,
+        'toughness' => $data['toughness'] ?? null,
+        'rarity' => $data['rarity'] ?? '',
+        'set_name' => $data['set_name'] ?? '',
+        'set' => $data['set'] ?? '',
+        'image_url' => $data['image_uris']['normal'] ?? ''
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -395,8 +461,7 @@ $user = $stmt->fetch();
                 <div class="card text-center">
                     <div class="card-body">
                         <h3>Keine Karten gefunden</h3>
-                        <p>Fügen Sie Ihre erste Karte über den Bulk-Import hinzu!</p>
-                        <a href="bulk_import.php" class="btn btn-primary">📦 Karten hinzufügen</a>
+                        <p>Fügen Sie Ihre erste Karte zur Sammlung hinzu!</p>
                     </div>
                 </div>
             <?php endif; ?>
