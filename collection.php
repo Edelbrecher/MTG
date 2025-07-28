@@ -141,29 +141,57 @@ $user = $stmt->fetch();
             font-size: 12px;
         }
         
-        /* Dynamic Grid Classes */
-        .cards-grid[data-cards-per-row="3"] { grid-template-columns: repeat(3, 1fr); }
-        .cards-grid[data-cards-per-row="4"] { grid-template-columns: repeat(4, 1fr); }
-        .cards-grid[data-cards-per-row="5"] { grid-template-columns: repeat(5, 1fr); }
-        .cards-grid[data-cards-per-row="6"] { grid-template-columns: repeat(6, 1fr); }
-        .cards-grid[data-cards-per-row="7"] { grid-template-columns: repeat(7, 1fr); }
-        .cards-grid[data-cards-per-row="8"] { grid-template-columns: repeat(8, 1fr); }
-        .cards-grid[data-cards-per-row="9"] { grid-template-columns: repeat(9, 1fr); }
-        
-        /* Responsive adjustments */
-        @media (max-width: 1400px) {
-            .cards-grid[data-cards-per-row="9"] { grid-template-columns: repeat(7, 1fr); }
-            .cards-grid[data-cards-per-row="8"] { grid-template-columns: repeat(6, 1fr); }
+        /* Dynamic Grid Classes - Responsive Card Sizing within normal container */
+        .cards-grid {
+            gap: 16px;
+            padding: 0;
+            width: 100%;
         }
         
+        .cards-grid[data-cards-per-row="3"] { 
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .cards-grid[data-cards-per-row="4"] { 
+            grid-template-columns: repeat(4, 1fr);
+        }
+        .cards-grid[data-cards-per-row="5"] { 
+            grid-template-columns: repeat(5, 1fr);
+        }
+        .cards-grid[data-cards-per-row="6"] { 
+            grid-template-columns: repeat(6, 1fr);
+        }
+        .cards-grid[data-cards-per-row="7"] { 
+            grid-template-columns: repeat(7, 1fr);
+        }
+        .cards-grid[data-cards-per-row="8"] { 
+            grid-template-columns: repeat(8, 1fr);
+        }
+        .cards-grid[data-cards-per-row="9"] { 
+            grid-template-columns: repeat(9, 1fr);
+        }
+        
+        /* Card scaling for better fit within container */
+        .mtg-card {
+            max-width: none; /* Let grid control the width */
+            min-width: 150px; /* Minimum usable size */
+            width: 100%;
+        }
+        
+        /* Responsive adjustments - reduce columns on smaller screens */
         @media (max-width: 1200px) {
-            .cards-grid[data-cards-per-row="9"],
-            .cards-grid[data-cards-per-row="8"],
-            .cards-grid[data-cards-per-row="7"] { grid-template-columns: repeat(5, 1fr); }
-            .cards-grid[data-cards-per-row="6"] { grid-template-columns: repeat(4, 1fr); }
+            .cards-grid[data-cards-per-row="9"] { grid-template-columns: repeat(6, 1fr); }
+            .cards-grid[data-cards-per-row="8"] { grid-template-columns: repeat(5, 1fr); }
+            .cards-grid[data-cards-per-row="7"] { grid-template-columns: repeat(4, 1fr); }
         }
         
         @media (max-width: 900px) {
+            .cards-grid[data-cards-per-row="9"],
+            .cards-grid[data-cards-per-row="8"],
+            .cards-grid[data-cards-per-row="7"],
+            .cards-grid[data-cards-per-row="6"] { grid-template-columns: repeat(4, 1fr); }
+        }
+        
+        @media (max-width: 700px) {
             .cards-grid[data-cards-per-row="9"],
             .cards-grid[data-cards-per-row="8"],
             .cards-grid[data-cards-per-row="7"],
@@ -173,6 +201,132 @@ $user = $stmt->fetch();
         
         @media (max-width: 600px) {
             .cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+        
+        /* List View Styles */
+        .list-view {
+            display: none;
+        }
+        
+        .list-view.active {
+            display: block;
+        }
+        
+        .cards-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .cards-table th,
+        .cards-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .cards-table th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .cards-table tr:hover {
+            background: #f9fafb;
+        }
+        
+        .cards-table tr.hidden {
+            display: none;
+        }
+        
+        .card-image-small {
+            width: 40px;
+            height: 56px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .card-name-cell {
+            font-weight: 600;
+            color: var(--primary-color);
+            min-width: 180px;
+        }
+        
+        .card-cost-cell {
+            min-width: 80px;
+        }
+        
+        .card-type-cell {
+            color: #6b7280;
+            min-width: 150px;
+        }
+        
+        .card-stats-cell {
+            text-align: center;
+            font-weight: 600;
+            min-width: 60px;
+        }
+        
+        .card-rarity-cell {
+            text-align: center;
+            min-width: 80px;
+        }
+        
+        .card-set-cell {
+            color: #6b7280;
+            font-size: 12px;
+            min-width: 100px;
+        }
+        
+        .card-quantity-cell {
+            text-align: center;
+            min-width: 80px;
+        }
+        
+        .card-actions-cell {
+            text-align: center;
+            min-width: 120px;
+        }
+        
+        .rarity-common { color: #6b7280; }
+        .rarity-uncommon { color: #9ca3af; }
+        .rarity-rare { color: #fbbf24; }
+        .rarity-mythic { color: #ef4444; }
+        
+        .quantity-controls-inline {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            justify-content: center;
+        }
+        
+        .quantity-controls-inline input {
+            width: 50px;
+            padding: 2px 4px;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        .quantity-controls-inline button {
+            padding: 2px 6px;
+            font-size: 11px;
+        }
+        
+        /* View mode toggle styles */
+        #grid-controls {
+            transition: opacity 0.3s ease;
+        }
+        
+        #grid-controls.hidden {
+            opacity: 0.5;
+            pointer-events: none;
         }
         
         /* Hidden card animation */
@@ -188,6 +342,148 @@ $user = $stmt->fetch();
         .filter-group select.active {
             border-color: var(--primary-color);
             background-color: #eff6ff;
+        }
+        
+        /* Floating Sidebar for Bulk Import */
+        .bulk-import-sidebar {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 300px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            transition: all 0.3s ease;
+            border: 2px solid var(--primary-color);
+        }
+        
+        .bulk-import-sidebar.collapsed {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+        }
+        
+        .sidebar-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        .bulk-import-sidebar.collapsed .sidebar-toggle {
+            top: 12px;
+            right: 12px;
+            transform: rotate(180deg);
+        }
+        
+        .sidebar-content {
+            padding: 20px;
+            transition: opacity 0.3s ease;
+        }
+        
+        .bulk-import-sidebar.collapsed .sidebar-content {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .sidebar-header {
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .sidebar-header h4 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 16px;
+        }
+        
+        .quick-add-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .quick-add-input {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .quick-add-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        
+        .sidebar-stats {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
+            text-align: center;
+        }
+        
+        /* Layout adjustment for main content - Same as other pages */
+        .container {
+            /* Use default container styles like other pages */
+        }
+        
+        .main-content {
+            /* Use default main-content styles like other pages */
+        }
+        
+        /* Sidebar should not affect main content layout */
+        @media (min-width: 1400px) {
+            /* No special layout changes needed */
+        }
+        
+        @media (max-width: 1399px) {
+            .bulk-import-sidebar {
+                left: 10px;
+                width: 280px;
+            }
+            
+            .bulk-import-sidebar.collapsed {
+                width: 50px;
+                height: 50px;
+            }
+        }
+        
+        @media (max-width: 900px) {
+            .bulk-import-sidebar {
+                position: relative;
+                left: auto;
+                top: auto;
+                transform: none;
+                width: 100%;
+                margin-bottom: 20px;
+            }
+            
+            .bulk-import-sidebar.collapsed {
+                width: 100%;
+                height: auto;
+                border-radius: 12px;
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
         }
     </style>
 </head>
@@ -213,15 +509,24 @@ $user = $stmt->fetch();
                 </div>
             <?php endif; ?>
 
-            <!-- Quick Actions -->
-            <div class="card mb-4">
-                <div class="card-body text-center">
-                    <div style="display: flex; justify-content: center; gap: 16px; align-items: center;">
-                        <div>
-                            <h4 style="margin: 0 0 8px 0; color: var(--primary-color);">Karten hinzufügen</h4>
-                            <p style="margin: 0; color: #6b7280; font-size: 14px;">Verwende den Bulk-Import für einzelne oder mehrere Karten</p>
-                        </div>
-                        <a href="bulk_import.php" class="btn btn-primary">📦 Zum Bulk-Import</a>
+            <!-- Floating Bulk Import Sidebar -->
+            <div class="bulk-import-sidebar" id="bulk-sidebar">
+                <button class="sidebar-toggle" onclick="toggleSidebar()">📦</button>
+                <div class="sidebar-content">
+                    <div class="sidebar-header">
+                        <h4>📦 Quick Add</h4>
+                    </div>
+                    <form onsubmit="quickAddCards(event)" class="quick-add-form">
+                        <textarea 
+                            id="quick-add-input" 
+                            class="quick-add-input" 
+                            placeholder="Lightning Bolt&#10;Counterspell&#10;Birds of Paradise"
+                            rows="4"></textarea>
+                        <button type="submit" class="btn btn-primary btn-small">Hinzufügen</button>
+                        <a href="bulk_import.php" class="btn btn-secondary btn-small">Vollständiger Import</a>
+                    </form>
+                    <div class="sidebar-stats" id="sidebar-stats">
+                        Bereit für Quick-Add
                     </div>
                 </div>
             </div>
@@ -231,16 +536,27 @@ $user = $stmt->fetch();
                 <div class="filter-header">
                     <h3>🔍 Filter & Ansicht</h3>
                     <div class="view-controls">
-                        <label>Karten pro Reihe:</label>
-                        <select id="cards-per-row" onchange="changeCardsPerRow(this.value)">
-                            <option value="3">3 Karten</option>
-                            <option value="4" selected>4 Karten</option>
-                            <option value="5">5 Karten</option>
-                            <option value="6">6 Karten</option>
-                            <option value="7">7 Karten</option>
-                            <option value="8">8 Karten</option>
-                            <option value="9">9 Karten</option>
-                        </select>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <div>
+                                <label>Ansicht:</label>
+                                <select id="view-mode" onchange="changeViewMode(this.value)">
+                                    <option value="grid">🎴 Karten-Grid</option>
+                                    <option value="list">📋 Listen-Ansicht</option>
+                                </select>
+                            </div>
+                            <div id="grid-controls">
+                                <label>Karten pro Reihe:</label>
+                                <select id="cards-per-row" onchange="changeCardsPerRow(this.value)">
+                                    <option value="3">3 Karten</option>
+                                    <option value="4">4 Karten</option>
+                                    <option value="5" selected>5 Karten</option>
+                                    <option value="6">6 Karten</option>
+                                    <option value="7">7 Karten</option>
+                                    <option value="8">8 Karten</option>
+                                    <option value="9">9 Karten</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -332,8 +648,8 @@ $user = $stmt->fetch();
                 </div>
             </div>
 
-            <!-- Collection Grid with Dynamic Classes -->
-            <div class="cards-grid" id="cards-grid" data-cards-per-row="4">
+            <!-- Grid View -->
+            <div class="cards-grid grid-view" id="cards-grid" data-cards-per-row="5">
                 <?php foreach ($collection as $card): ?>
                     <?php
                     $card_data = json_decode($card['card_data'], true);
@@ -391,6 +707,97 @@ $user = $stmt->fetch();
                 <?php endforeach; ?>
             </div>
 
+            <!-- List View -->
+            <div class="list-view" id="list-view">
+                <table class="cards-table">
+                    <thead>
+                        <tr>
+                            <th>Bild</th>
+                            <th>Name</th>
+                            <th>Manakosten</th>
+                            <th>Typ</th>
+                            <th>Stärke/Widerstand</th>
+                            <th>Seltenheit</th>
+                            <th>Set</th>
+                            <th>Anzahl</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($collection as $card): ?>
+                            <?php $card_data = json_decode($card['card_data'], true); ?>
+                            <tr class="card-row"
+                                data-name="<?php echo htmlspecialchars(strtolower($card['card_name'])); ?>"
+                                data-colors="<?php echo implode(',', $card_data['colors'] ?? []); ?>"
+                                data-type="<?php echo htmlspecialchars(strtolower($card_data['type_line'] ?? '')); ?>"
+                                data-rarity="<?php echo htmlspecialchars($card_data['rarity'] ?? ''); ?>"
+                                data-cmc="<?php echo intval($card_data['cmc'] ?? 0); ?>"
+                                data-legendary="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false ? 'true' : 'false'; ?>"
+                                data-commander="<?php echo (strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false && strpos(strtolower($card_data['type_line'] ?? ''), 'creature') !== false) ? 'true' : 'false'; ?>"
+                                data-tribal="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'tribal') !== false ? 'true' : 'false'; ?>"
+                                data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>">
+                                <td>
+                                    <img src="<?php echo htmlspecialchars($card_data['image_url'] ?? 'assets/images/card-back.jpg'); ?>" 
+                                         alt="<?php echo htmlspecialchars($card['card_name']); ?>" 
+                                         class="card-image-small">
+                                </td>
+                                <td class="card-name-cell"><?php echo htmlspecialchars($card['card_name']); ?></td>
+                                <td class="card-cost-cell">
+                                    <?php if (isset($card_data['mana_cost'])): ?>
+                                        <?php echo renderManaCost($card_data['mana_cost']); ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="card-type-cell"><?php echo htmlspecialchars($card_data['type_line'] ?? ''); ?></td>
+                                <td class="card-stats-cell">
+                                    <?php if (isset($card_data['power'], $card_data['toughness'])): ?>
+                                        <?php echo $card_data['power']; ?>/<?php echo $card_data['toughness']; ?>
+                                    <?php else: ?>
+                                        —
+                                    <?php endif; ?>
+                                </td>
+                                <td class="card-rarity-cell">
+                                    <span class="rarity-<?php echo $card_data['rarity'] ?? 'common'; ?>">
+                                        <?php 
+                                        $rarity_icons = [
+                                            'common' => '⚪',
+                                            'uncommon' => '🔘',
+                                            'rare' => '🟡',
+                                            'mythic' => '🔴'
+                                        ];
+                                        echo $rarity_icons[$card_data['rarity'] ?? 'common'] ?? '⚪';
+                                        ?>
+                                        <?php echo ucfirst($card_data['rarity'] ?? 'common'); ?>
+                                    </span>
+                                </td>
+                                <td class="card-set-cell">
+                                    <?php echo htmlspecialchars($card_data['set_name'] ?? ''); ?><br>
+                                    <small><?php echo htmlspecialchars(strtoupper($card_data['set'] ?? '')); ?></small>
+                                </td>
+                                <td class="card-quantity-cell">
+                                    <div class="quantity-controls-inline">
+                                        <form method="POST" style="display: contents;">
+                                            <input type="hidden" name="action" value="update_quantity">
+                                            <input type="hidden" name="card_id" value="<?php echo $card['id']; ?>">
+                                            <input type="number" name="quantity" value="<?php echo $card['quantity']; ?>" 
+                                                   min="0" max="100">
+                                            <button type="submit">✓</button>
+                                        </form>
+                                    </div>
+                                </td>
+                                <td class="card-actions-cell">
+                                    <form method="POST" style="display: inline;">
+                                        <input type="hidden" name="action" value="delete_card">
+                                        <input type="hidden" name="card_id" value="<?php echo $card['id']; ?>">
+                                        <button type="submit" class="btn btn-danger btn-small"
+                                                onclick="return confirm('Karte wirklich löschen?')">🗑 Löschen</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
             <?php if (empty($collection)): ?>
                 <div class="card text-center">
                     <div class="card-body">
@@ -408,12 +815,34 @@ $user = $stmt->fetch();
     <script>
         // Live Filtering System
         let allCards = [];
+        let allRows = [];
         
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             allCards = Array.from(document.querySelectorAll('.mtg-card'));
+            allRows = Array.from(document.querySelectorAll('.card-row'));
             updateStats();
         });
+        
+        // Change view mode
+        function changeViewMode(mode) {
+            const gridView = document.querySelector('.grid-view');
+            const listView = document.querySelector('.list-view');
+            const gridControls = document.getElementById('grid-controls');
+            
+            if (mode === 'list') {
+                gridView.style.display = 'none';
+                listView.classList.add('active');
+                gridControls.classList.add('hidden');
+            } else {
+                gridView.style.display = 'grid';
+                listView.classList.remove('active');
+                gridControls.classList.remove('hidden');
+            }
+            
+            // Reapply filters to current view
+            applyFilters();
+        }
         
         // Apply all filters
         function applyFilters() {
@@ -424,14 +853,17 @@ $user = $stmt->fetch();
             const cmcFilter = document.getElementById('cmc-filter').value;
             const specialFilter = document.getElementById('special-filter').value;
             
+            const isListView = document.getElementById('view-mode').value === 'list';
+            const itemsToFilter = isListView ? allRows : allCards;
+            
             let visibleCount = 0;
             
-            allCards.forEach(card => {
+            itemsToFilter.forEach(item => {
                 let isVisible = true;
                 
                 // Text search
                 if (searchTerm) {
-                    const cardName = card.dataset.name || '';
+                    const cardName = item.dataset.name || '';
                     if (!cardName.includes(searchTerm)) {
                         isVisible = false;
                     }
@@ -439,7 +871,7 @@ $user = $stmt->fetch();
                 
                 // Color filter
                 if (colorFilter && isVisible) {
-                    const cardColors = card.dataset.colors || '';
+                    const cardColors = item.dataset.colors || '';
                     if (colorFilter === 'C') {
                         // Colorless
                         isVisible = cardColors === '';
@@ -454,9 +886,9 @@ $user = $stmt->fetch();
                 
                 // Type filter
                 if (typeFilter && isVisible) {
-                    const cardType = card.dataset.type || '';
+                    const cardType = item.dataset.type || '';
                     if (typeFilter === 'legendary') {
-                        isVisible = card.dataset.legendary === 'true';
+                        isVisible = item.dataset.legendary === 'true';
                     } else {
                         isVisible = cardType.includes(typeFilter);
                     }
@@ -464,13 +896,13 @@ $user = $stmt->fetch();
                 
                 // Rarity filter
                 if (rarityFilter && isVisible) {
-                    const cardRarity = card.dataset.rarity || '';
+                    const cardRarity = item.dataset.rarity || '';
                     isVisible = cardRarity === rarityFilter;
                 }
                 
                 // CMC filter
                 if (cmcFilter && isVisible) {
-                    const cardCmc = parseInt(card.dataset.cmc || '0');
+                    const cardCmc = parseInt(item.dataset.cmc || '0');
                     if (cmcFilter === '6') {
                         isVisible = cardCmc >= 6;
                     } else {
@@ -482,26 +914,26 @@ $user = $stmt->fetch();
                 if (specialFilter && isVisible) {
                     switch (specialFilter) {
                         case 'commander':
-                            isVisible = card.dataset.commander === 'true';
+                            isVisible = item.dataset.commander === 'true';
                             break;
                         case 'legendary':
-                            isVisible = card.dataset.legendary === 'true';
+                            isVisible = item.dataset.legendary === 'true';
                             break;
                         case 'tribal':
-                            isVisible = card.dataset.tribal === 'true';
+                            isVisible = item.dataset.tribal === 'true';
                             break;
                         case 'snow':
-                            isVisible = card.dataset.snow === 'true';
+                            isVisible = item.dataset.snow === 'true';
                             break;
                     }
                 }
                 
-                // Show/hide card
+                // Show/hide item
                 if (isVisible) {
-                    card.classList.remove('hidden');
+                    item.classList.remove('hidden');
                     visibleCount++;
                 } else {
-                    card.classList.add('hidden');
+                    item.classList.add('hidden');
                 }
             });
             
@@ -517,11 +949,13 @@ $user = $stmt->fetch();
         
         // Update statistics
         function updateStats() {
-            const visibleCards = allCards.filter(card => !card.classList.contains('hidden')).length;
-            const totalCards = allCards.length;
+            const isListView = document.getElementById('view-mode').value === 'list';
+            const itemsToCount = isListView ? allRows : allCards;
+            const visibleItems = itemsToCount.filter(item => !item.classList.contains('hidden')).length;
+            const totalItems = itemsToCount.length;
             
-            document.getElementById('visible-cards').textContent = visibleCards;
-            document.getElementById('total-cards').textContent = totalCards;
+            document.getElementById('visible-cards').textContent = visibleItems;
+            document.getElementById('total-cards').textContent = totalItems;
         }
         
         // Highlight active filters
@@ -558,6 +992,10 @@ $user = $stmt->fetch();
                 card.classList.remove('hidden');
             });
             
+            allRows.forEach(row => {
+                row.classList.remove('hidden');
+            });
+            
             updateStats();
             highlightActiveFilters();
         }
@@ -578,7 +1016,7 @@ $user = $stmt->fetch();
         
         // Auto-focus search field when typing
         document.addEventListener('keydown', function(e) {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             
             if (e.key.match(/[a-zA-Z0-9]/)) {
@@ -586,6 +1024,69 @@ $user = $stmt->fetch();
                 searchInput.focus();
             }
         });
+        
+        // Sidebar functionality
+        function toggleSidebar() {
+            const sidebar = document.getElementById('bulk-sidebar');
+            sidebar.classList.toggle('collapsed');
+            
+            // Store state in localStorage
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+        
+        // Restore sidebar state on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+            if (isCollapsed) {
+                document.getElementById('bulk-sidebar').classList.add('collapsed');
+            }
+        });
+        
+        // Quick add cards functionality
+        async function quickAddCards(event) {
+            event.preventDefault();
+            
+            const input = document.getElementById('quick-add-input');
+            const statsDiv = document.getElementById('sidebar-stats');
+            const cardNames = input.value.trim().split('\n').filter(name => name.trim());
+            
+            if (cardNames.length === 0) {
+                statsDiv.textContent = 'Keine Kartennamen eingegeben';
+                return;
+            }
+            
+            statsDiv.textContent = `Verarbeite ${cardNames.length} Karte(n)...`;
+            
+            try {
+                // Create form data
+                const formData = new FormData();
+                formData.append('action', 'bulk_import');
+                formData.append('card_input', input.value);
+                formData.append('separator', 'newline');
+                
+                // Send to bulk_import.php
+                const response = await fetch('bulk_import.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    statsDiv.textContent = `✅ ${cardNames.length} Karte(n) hinzugefügt!`;
+                    input.value = '';
+                    
+                    // Reload page to show new cards
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    throw new Error('Network response was not ok');
+                }
+                
+            } catch (error) {
+                statsDiv.textContent = '❌ Fehler beim Hinzufügen';
+                console.error('Error:', error);
+            }
+        }
     </script>
 </body>
 </html>
