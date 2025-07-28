@@ -1,0 +1,30 @@
+# Database backups and dumps
+*.sql.backup
+database_backup_*
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# User uploaded files (if any in future)
+uploads/
+user_data/
+
+# Environment specific configs (if any)
+.env
+config.local.php
+
+# PHP temporary files
+*.php~
