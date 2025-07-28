@@ -141,6 +141,150 @@ function fetchCardData($card_name) {
     <title>Sammlung - MTG Collection Manager</title>
     <link rel="stylesheet" href="assets/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Enhanced Filter Panel */
+        .filter-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .filter-header h3 {
+            margin: 0;
+            color: var(--primary-color);
+        }
+        
+        .view-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .view-controls label {
+            font-weight: 500;
+            color: #6b7280;
+        }
+        
+        .view-controls select {
+            padding: 6px 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            background: white;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .filter-group label {
+            font-weight: 500;
+            color: #374151;
+            font-size: 14px;
+        }
+        
+        .filter-group input,
+        .filter-group select {
+            padding: 8px 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .filter-stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f9fafb;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        /* Dynamic Grid Classes */
+        .cards-grid[data-cards-per-row="3"] { grid-template-columns: repeat(3, 1fr); }
+        .cards-grid[data-cards-per-row="4"] { grid-template-columns: repeat(4, 1fr); }
+        .cards-grid[data-cards-per-row="5"] { grid-template-columns: repeat(5, 1fr); }
+        .cards-grid[data-cards-per-row="6"] { grid-template-columns: repeat(6, 1fr); }
+        .cards-grid[data-cards-per-row="7"] { grid-template-columns: repeat(7, 1fr); }
+        .cards-grid[data-cards-per-row="8"] { grid-template-columns: repeat(8, 1fr); }
+        .cards-grid[data-cards-per-row="9"] { grid-template-columns: repeat(9, 1fr); }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1400px) {
+            .cards-grid[data-cards-per-row="9"] { grid-template-columns: repeat(7, 1fr); }
+            .cards-grid[data-cards-per-row="8"] { grid-template-columns: repeat(6, 1fr); }
+        }
+        
+        @media (max-width: 1200px) {
+            .cards-grid[data-cards-per-row="9"],
+            .cards-grid[data-cards-per-row="8"],
+            .cards-grid[data-cards-per-row="7"] { grid-template-columns: repeat(5, 1fr); }
+            .cards-grid[data-cards-per-row="6"] { grid-template-columns: repeat(4, 1fr); }
+        }
+        
+        @media (max-width: 900px) {
+            .cards-grid[data-cards-per-row="9"],
+            .cards-grid[data-cards-per-row="8"],
+            .cards-grid[data-cards-per-row="7"],
+            .cards-grid[data-cards-per-row="6"],
+            .cards-grid[data-cards-per-row="5"] { grid-template-columns: repeat(3, 1fr); }
+        }
+        
+        @media (max-width: 600px) {
+            .cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+        
+        /* Hidden card animation */
+        .mtg-card.hidden {
+            display: none;
+        }
+        
+        .mtg-card {
+            transition: opacity 0.3s ease;
+        }
+        
+        /* Filter highlight when active */
+        .filter-group select.active {
+            border-color: var(--primary-color);
+            background-color: #eff6ff;
+        }
+    </style>
 </head>
 <body>
     <?php include 'includes/navbar.php'; ?>
@@ -185,53 +329,130 @@ function fetchCardData($card_name) {
                 </div>
             </div>
 
-            <!-- Filters -->
-            <div class="filters">
-                <form method="GET" class="filter-group">
-                    <div class="filter-item">
-                        <label>Suchbegriff</label>
-                        <input type="text" name="search" value="<?php echo htmlspecialchars($search_filter); ?>" 
-                               placeholder="Kartenname suchen...">
+            <!-- Enhanced Filters with Live Filtering -->
+            <div class="filter-panel">
+                <div class="filter-header">
+                    <h3>🔍 Filter & Ansicht</h3>
+                    <div class="view-controls">
+                        <label>Karten pro Reihe:</label>
+                        <select id="cards-per-row" onchange="changeCardsPerRow(this.value)">
+                            <option value="3">3 Karten</option>
+                            <option value="4" selected>4 Karten</option>
+                            <option value="5">5 Karten</option>
+                            <option value="6">6 Karten</option>
+                            <option value="7">7 Karten</option>
+                            <option value="8">8 Karten</option>
+                            <option value="9">9 Karten</option>
+                        </select>
                     </div>
-                    <div class="filter-item">
-                        <label>Farbe</label>
-                        <select name="color">
+                </div>
+                
+                <div class="filter-grid">
+                    <!-- Text Search -->
+                    <div class="filter-group">
+                        <label for="search-input">🔍 Kartenname</label>
+                        <input type="text" 
+                               id="search-input" 
+                               placeholder="Nach Kartenname suchen..." 
+                               oninput="applyFilters()">
+                    </div>
+                    
+                    <!-- Color Filter -->
+                    <div class="filter-group">
+                        <label for="color-filter">🎨 Farbe</label>
+                        <select id="color-filter" onchange="applyFilters()">
                             <option value="">Alle Farben</option>
-                            <option value="W" <?php echo $color_filter === 'W' ? 'selected' : ''; ?>>Weiß</option>
-                            <option value="U" <?php echo $color_filter === 'U' ? 'selected' : ''; ?>>Blau</option>
-                            <option value="B" <?php echo $color_filter === 'B' ? 'selected' : ''; ?>>Schwarz</option>
-                            <option value="R" <?php echo $color_filter === 'R' ? 'selected' : ''; ?>>Rot</option>
-                            <option value="G" <?php echo $color_filter === 'G' ? 'selected' : ''; ?>>Grün</option>
+                            <option value="W">⚪ Weiß</option>
+                            <option value="U">🔵 Blau</option>
+                            <option value="B">⚫ Schwarz</option>
+                            <option value="R">🔴 Rot</option>
+                            <option value="G">🟢 Grün</option>
+                            <option value="C">⚪ Farblos</option>
+                            <option value="multicolor">🌈 Mehrfarbig</option>
                         </select>
                     </div>
-                    <div class="filter-item">
-                        <label>Typ</label>
-                        <select name="type">
+                    
+                    <!-- Type Filter -->
+                    <div class="filter-group">
+                        <label for="type-filter">🏷️ Kartentyp</label>
+                        <select id="type-filter" onchange="applyFilters()">
                             <option value="">Alle Typen</option>
-                            <option value="Creature" <?php echo $type_filter === 'Creature' ? 'selected' : ''; ?>>Kreatur</option>
-                            <option value="Instant" <?php echo $type_filter === 'Instant' ? 'selected' : ''; ?>>Spontanzauber</option>
-                            <option value="Sorcery" <?php echo $type_filter === 'Sorcery' ? 'selected' : ''; ?>>Hexerei</option>
-                            <option value="Enchantment" <?php echo $type_filter === 'Enchantment' ? 'selected' : ''; ?>>Verzauberung</option>
-                            <option value="Artifact" <?php echo $type_filter === 'Artifact' ? 'selected' : ''; ?>>Artefakt</option>
-                            <option value="Planeswalker" <?php echo $type_filter === 'Planeswalker' ? 'selected' : ''; ?>>Planeswalker</option>
-                            <option value="Land" <?php echo $type_filter === 'Land' ? 'selected' : ''; ?>>Land</option>
+                            <option value="Creature">🦁 Kreatur</option>
+                            <option value="Instant">⚡ Spontanzauber</option>
+                            <option value="Sorcery">🔮 Hexerei</option>
+                            <option value="Enchantment">✨ Verzauberung</option>
+                            <option value="Artifact">⚙️ Artefakt</option>
+                            <option value="Planeswalker">👑 Planeswalker</option>
+                            <option value="Land">🌍 Land</option>
+                            <option value="Legendary">⭐ Legendär</option>
                         </select>
                     </div>
-                    <div class="filter-item" style="display: flex; align-items: end;">
-                        <button type="submit" class="btn btn-secondary">Filtern</button>
+                    
+                    <!-- Rarity Filter -->
+                    <div class="filter-group">
+                        <label for="rarity-filter">💎 Seltenheit</label>
+                        <select id="rarity-filter" onchange="applyFilters()">
+                            <option value="">Alle Seltenheiten</option>
+                            <option value="common">⚪ Common</option>
+                            <option value="uncommon">🔘 Uncommon</option>
+                            <option value="rare">🟡 Rare</option>
+                            <option value="mythic">🔴 Mythic</option>
+                        </select>
                     </div>
-                </form>
+                    
+                    <!-- CMC Filter -->
+                    <div class="filter-group">
+                        <label for="cmc-filter">💰 Manakosten</label>
+                        <select id="cmc-filter" onchange="applyFilters()">
+                            <option value="">Alle Kosten</option>
+                            <option value="0">0 Mana</option>
+                            <option value="1">1 Mana</option>
+                            <option value="2">2 Mana</option>
+                            <option value="3">3 Mana</option>
+                            <option value="4">4 Mana</option>
+                            <option value="5">5 Mana</option>
+                            <option value="6">6+ Mana</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Special Filters -->
+                    <div class="filter-group">
+                        <label for="special-filter">⭐ Spezial</label>
+                        <select id="special-filter" onchange="applyFilters()">
+                            <option value="">Alle Karten</option>
+                            <option value="commander">👑 Commander</option>
+                            <option value="legendary">⭐ Legendär</option>
+                            <option value="tribal">🏹 Tribal</option>
+                            <option value="snow">❄️ Snow</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Stats Display -->
+                <div class="filter-stats" id="filter-stats">
+                    <span id="visible-cards">0</span> von <span id="total-cards">0</span> Karten angezeigt
+                    <button onclick="resetFilters()" class="btn btn-small btn-secondary">🔄 Filter zurücksetzen</button>
+                </div>
             </div>
 
-            <!-- Collection Grid -->
-            <div class="cards-grid">
+            <!-- Collection Grid with Dynamic Classes -->
+            <div class="cards-grid" id="cards-grid" data-cards-per-row="4">
                 <?php foreach ($collection as $card): ?>
                     <?php
                     $card_data = json_decode($card['card_data'], true);
                     $colors = $card_data['colors'] ?? [];
                     $border_class = empty($colors) ? 'colorless' : (count($colors) > 1 ? 'multicolor' : strtolower($colors[0]));
                     ?>
-                    <div class="mtg-card">
+                    <div class="mtg-card" 
+                         data-name="<?php echo htmlspecialchars(strtolower($card['card_name'])); ?>"
+                         data-colors="<?php echo implode(',', $colors); ?>"
+                         data-type="<?php echo htmlspecialchars(strtolower($card_data['type_line'] ?? '')); ?>"
+                         data-rarity="<?php echo htmlspecialchars($card_data['rarity'] ?? ''); ?>"
+                         data-cmc="<?php echo intval($card_data['cmc'] ?? 0); ?>"
+                         data-legendary="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false ? 'true' : 'false'; ?>"
+                         data-commander="<?php echo (strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false && strpos(strtolower($card_data['type_line'] ?? ''), 'creature') !== false) ? 'true' : 'false'; ?>"
+                         data-tribal="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'tribal') !== false ? 'true' : 'false'; ?>"
+                         data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>">
                         <div class="mtg-card-border <?php echo $border_class; ?>"></div>
                         <img src="<?php echo htmlspecialchars($card_data['image_url'] ?? 'assets/images/card-back.jpg'); ?>" 
                              alt="<?php echo htmlspecialchars($card['card_name']); ?>" 
@@ -285,6 +506,189 @@ function fetchCardData($card_name) {
     </div>
 
     <?php include 'includes/footer.php'; ?>
+    
+    <script>
+        // Live Filtering System
+        let allCards = [];
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            allCards = Array.from(document.querySelectorAll('.mtg-card'));
+            updateStats();
+        });
+        
+        // Apply all filters
+        function applyFilters() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            const colorFilter = document.getElementById('color-filter').value;
+            const typeFilter = document.getElementById('type-filter').value.toLowerCase();
+            const rarityFilter = document.getElementById('rarity-filter').value;
+            const cmcFilter = document.getElementById('cmc-filter').value;
+            const specialFilter = document.getElementById('special-filter').value;
+            
+            let visibleCount = 0;
+            
+            allCards.forEach(card => {
+                let isVisible = true;
+                
+                // Text search
+                if (searchTerm) {
+                    const cardName = card.dataset.name || '';
+                    if (!cardName.includes(searchTerm)) {
+                        isVisible = false;
+                    }
+                }
+                
+                // Color filter
+                if (colorFilter && isVisible) {
+                    const cardColors = card.dataset.colors || '';
+                    if (colorFilter === 'C') {
+                        // Colorless
+                        isVisible = cardColors === '';
+                    } else if (colorFilter === 'multicolor') {
+                        // Multicolor
+                        isVisible = cardColors.split(',').filter(c => c.length > 0).length > 1;
+                    } else {
+                        // Specific color
+                        isVisible = cardColors.includes(colorFilter);
+                    }
+                }
+                
+                // Type filter
+                if (typeFilter && isVisible) {
+                    const cardType = card.dataset.type || '';
+                    if (typeFilter === 'legendary') {
+                        isVisible = card.dataset.legendary === 'true';
+                    } else {
+                        isVisible = cardType.includes(typeFilter);
+                    }
+                }
+                
+                // Rarity filter
+                if (rarityFilter && isVisible) {
+                    const cardRarity = card.dataset.rarity || '';
+                    isVisible = cardRarity === rarityFilter;
+                }
+                
+                // CMC filter
+                if (cmcFilter && isVisible) {
+                    const cardCmc = parseInt(card.dataset.cmc || '0');
+                    if (cmcFilter === '6') {
+                        isVisible = cardCmc >= 6;
+                    } else {
+                        isVisible = cardCmc === parseInt(cmcFilter);
+                    }
+                }
+                
+                // Special filter
+                if (specialFilter && isVisible) {
+                    switch (specialFilter) {
+                        case 'commander':
+                            isVisible = card.dataset.commander === 'true';
+                            break;
+                        case 'legendary':
+                            isVisible = card.dataset.legendary === 'true';
+                            break;
+                        case 'tribal':
+                            isVisible = card.dataset.tribal === 'true';
+                            break;
+                        case 'snow':
+                            isVisible = card.dataset.snow === 'true';
+                            break;
+                    }
+                }
+                
+                // Show/hide card
+                if (isVisible) {
+                    card.classList.remove('hidden');
+                    visibleCount++;
+                } else {
+                    card.classList.add('hidden');
+                }
+            });
+            
+            updateStats();
+            highlightActiveFilters();
+        }
+        
+        // Change cards per row
+        function changeCardsPerRow(count) {
+            const grid = document.getElementById('cards-grid');
+            grid.setAttribute('data-cards-per-row', count);
+        }
+        
+        // Update statistics
+        function updateStats() {
+            const visibleCards = allCards.filter(card => !card.classList.contains('hidden')).length;
+            const totalCards = allCards.length;
+            
+            document.getElementById('visible-cards').textContent = visibleCards;
+            document.getElementById('total-cards').textContent = totalCards;
+        }
+        
+        // Highlight active filters
+        function highlightActiveFilters() {
+            const filters = [
+                'search-input',
+                'color-filter', 
+                'type-filter', 
+                'rarity-filter', 
+                'cmc-filter', 
+                'special-filter'
+            ];
+            
+            filters.forEach(filterId => {
+                const filter = document.getElementById(filterId);
+                if (filter.value) {
+                    filter.classList.add('active');
+                } else {
+                    filter.classList.remove('active');
+                }
+            });
+        }
+        
+        // Reset all filters
+        function resetFilters() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('color-filter').value = '';
+            document.getElementById('type-filter').value = '';
+            document.getElementById('rarity-filter').value = '';
+            document.getElementById('cmc-filter').value = '';
+            document.getElementById('special-filter').value = '';
+            
+            allCards.forEach(card => {
+                card.classList.remove('hidden');
+            });
+            
+            updateStats();
+            highlightActiveFilters();
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + F to focus search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                document.getElementById('search-input').focus();
+            }
+            
+            // Escape to reset filters
+            if (e.key === 'Escape') {
+                resetFilters();
+            }
+        });
+        
+        // Auto-focus search field when typing
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            
+            if (e.key.match(/[a-zA-Z0-9]/)) {
+                const searchInput = document.getElementById('search-input');
+                searchInput.focus();
+            }
+        });
+    </script>
 </body>
 </html>
 
