@@ -105,6 +105,7 @@ try {
                 <div class="card-body">
                     <div class="flex gap-4">
                         <a href="collection.php" class="btn btn-primary">Sammlung verwalten</a>
+                        <a href="bulk_import.php" class="btn btn-primary">📦 Bulk-Import</a>
                         <a href="decks.php" class="btn btn-secondary">Decks erstellen</a>
                         <a href="settings.php" class="btn btn-secondary">Einstellungen</a>
                     </div>
