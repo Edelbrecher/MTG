@@ -6,8 +6,8 @@ $username = 'root';
 $password = '';
 
 try {
-    // Erst ohne Datenbank verbinden
-    $pdo = new PDO("mysql:host=$host;charset=utf8mb4", $username, $password);
+    // Erst ohne Datenbank verbinden (mit Socket-Pfad für XAMPP)
+    $pdo = new PDO("mysql:host=$host;unix_socket=/Applications/XAMPP/xamppfiles/var/mysql/mysql.sock;charset=utf8mb4", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
     // Datenbank erstellen falls nicht vorhanden

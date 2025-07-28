@@ -33,6 +33,15 @@ $stmt = $pdo->prepare("SELECT * FROM collections WHERE user_id = ? ORDER BY adde
 $stmt->execute([$_SESSION['user_id']]);
 $collection = $stmt->fetchAll();
 
+// Get collection summary using the optimized view
+$stmt = $pdo->prepare("SELECT unique_cards, total_cards FROM user_collection_summary WHERE user_id = ?");
+$stmt->execute([$_SESSION['user_id']]);
+$collection_summary = $stmt->fetch();
+
+// Fallback if view doesn't return data (for new users)
+$total_quantity = $collection_summary ? $collection_summary['total_cards'] : 0;
+$unique_cards = $collection_summary ? $collection_summary['unique_cards'] : count($collection);
+
 // Get user information
 $stmt = $pdo->prepare("SELECT username FROM users WHERE id = ?");
 $stmt->execute([$_SESSION['user_id']]);
@@ -175,6 +184,39 @@ $user = $stmt->fetch();
             max-width: none; /* Let grid control the width */
             min-width: 150px; /* Minimum usable size */
             width: 100%;
+            height: auto; /* Allow cards to grow with content */
+        }
+        
+        /* Smaller card images to make room for text */
+        .mtg-card-image {
+            height: 120px; /* Reduced from default */
+            width: auto;
+            object-fit: cover;
+        }
+        
+        /* Enhanced card content area */
+        .mtg-card-content {
+            padding: 8px;
+            flex-grow: 1;
+        }
+        
+        /* Card text styling */
+        .mtg-card-text {
+            font-size: 11px;
+            line-height: 1.3;
+            color: #374151;
+            margin: 6px 0;
+            max-height: 60px;
+            overflow-y: auto;
+            text-align: left;
+            background: #f9fafb;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border-left: 3px solid var(--primary-color);
+        }
+        
+        .mtg-card-text:empty {
+            display: none;
         }
         
         /* Responsive adjustments - reduce columns on smaller screens */
@@ -288,36 +330,14 @@ $user = $stmt->fetch();
         .card-quantity-cell {
             text-align: center;
             min-width: 80px;
-        }
-        
-        .card-actions-cell {
-            text-align: center;
-            min-width: 120px;
+            font-weight: 600;
+            color: var(--primary-color);
         }
         
         .rarity-common { color: #6b7280; }
         .rarity-uncommon { color: #9ca3af; }
         .rarity-rare { color: #fbbf24; }
         .rarity-mythic { color: #ef4444; }
-        
-        .quantity-controls-inline {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            justify-content: center;
-        }
-        
-        .quantity-controls-inline input {
-            width: 50px;
-            padding: 2px 4px;
-            font-size: 12px;
-            text-align: center;
-        }
-        
-        .quantity-controls-inline button {
-            padding: 2px 6px;
-            font-size: 11px;
-        }
         
         /* View mode toggle styles */
         #grid-controls {
@@ -644,6 +664,9 @@ $user = $stmt->fetch();
                 <!-- Stats Display -->
                 <div class="filter-stats" id="filter-stats">
                     <span id="visible-cards">0</span> von <span id="total-cards">0</span> Karten angezeigt
+                    <span style="margin-left: 12px; color: #9ca3af;">
+                        (Gesamt: <span id="total-quantity"><?php echo $total_quantity; ?></span> Karten inkl. Duplikate)
+                    </span>
                     <button onclick="resetFilters()" class="btn btn-small btn-secondary">🔄 Filter zurücksetzen</button>
                 </div>
             </div>
@@ -684,23 +707,16 @@ $user = $stmt->fetch();
                                 </div>
                             <?php endif; ?>
                             
-                            <!-- Quantity Controls -->
-                            <div class="flex items-center justify-between mt-2" style="gap: 0.5rem;">
-                                <form method="POST" style="display: flex; align-items: center; gap: 0.25rem;">
-                                    <input type="hidden" name="action" value="update_quantity">
-                                    <input type="hidden" name="card_id" value="<?php echo $card['id']; ?>">
-                                    <input type="number" name="quantity" value="<?php echo $card['quantity']; ?>" 
-                                           min="0" max="100" style="width: 60px; padding: 0.25rem; font-size: 0.75rem;">
-                                    <button type="submit" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">✓</button>
-                                </form>
-                                
-                                <form method="POST" style="display: inline;">
-                                    <input type="hidden" name="action" value="delete_card">
-                                    <input type="hidden" name="card_id" value="<?php echo $card['id']; ?>">
-                                    <button type="submit" class="btn btn-danger" 
-                                            style="padding: 0.25rem 0.5rem; font-size: 0.75rem;"
-                                            onclick="return confirm('Karte wirklich löschen?')">🗑</button>
-                                </form>
+                            <!-- Card Text -->
+                            <?php if (!empty($card_data['oracle_text'])): ?>
+                                <div class="mtg-card-text">
+                                    <?php echo nl2br(htmlspecialchars($card_data['oracle_text'])); ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <!-- Quantity Display (read-only) -->
+                            <div class="mtg-card-quantity" style="text-align: center; margin-top: 8px; font-weight: 600; color: var(--primary-color);">
+                                <?php echo $card['quantity']; ?>x vorhanden
                             </div>
                         </div>
                     </div>
@@ -716,11 +732,11 @@ $user = $stmt->fetch();
                             <th>Name</th>
                             <th>Manakosten</th>
                             <th>Typ</th>
+                            <th>Kartentext</th>
                             <th>Stärke/Widerstand</th>
                             <th>Seltenheit</th>
                             <th>Set</th>
                             <th>Anzahl</th>
-                            <th>Aktionen</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -748,6 +764,13 @@ $user = $stmt->fetch();
                                     <?php endif; ?>
                                 </td>
                                 <td class="card-type-cell"><?php echo htmlspecialchars($card_data['type_line'] ?? ''); ?></td>
+                                <td class="card-text-cell" style="max-width: 200px; font-size: 11px; line-height: 1.3;">
+                                    <?php if (!empty($card_data['oracle_text'])): ?>
+                                        <?php echo nl2br(htmlspecialchars(substr($card_data['oracle_text'], 0, 100) . (strlen($card_data['oracle_text']) > 100 ? '...' : ''))); ?>
+                                    <?php else: ?>
+                                        —
+                                    <?php endif; ?>
+                                </td>
                                 <td class="card-stats-cell">
                                     <?php if (isset($card_data['power'], $card_data['toughness'])): ?>
                                         <?php echo $card_data['power']; ?>/<?php echo $card_data['toughness']; ?>
@@ -774,23 +797,7 @@ $user = $stmt->fetch();
                                     <small><?php echo htmlspecialchars(strtoupper($card_data['set'] ?? '')); ?></small>
                                 </td>
                                 <td class="card-quantity-cell">
-                                    <div class="quantity-controls-inline">
-                                        <form method="POST" style="display: contents;">
-                                            <input type="hidden" name="action" value="update_quantity">
-                                            <input type="hidden" name="card_id" value="<?php echo $card['id']; ?>">
-                                            <input type="number" name="quantity" value="<?php echo $card['quantity']; ?>" 
-                                                   min="0" max="100">
-                                            <button type="submit">✓</button>
-                                        </form>
-                                    </div>
-                                </td>
-                                <td class="card-actions-cell">
-                                    <form method="POST" style="display: inline;">
-                                        <input type="hidden" name="action" value="delete_card">
-                                        <input type="hidden" name="card_id" value="<?php echo $card['id']; ?>">
-                                        <button type="submit" class="btn btn-danger btn-small"
-                                                onclick="return confirm('Karte wirklich löschen?')">🗑 Löschen</button>
-                                    </form>
+                                    <strong><?php echo $card['quantity']; ?>x</strong>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -951,11 +958,39 @@ $user = $stmt->fetch();
         function updateStats() {
             const isListView = document.getElementById('view-mode').value === 'list';
             const itemsToCount = isListView ? allRows : allCards;
-            const visibleItems = itemsToCount.filter(item => !item.classList.contains('hidden')).length;
+            const visibleItems = itemsToCount.filter(item => !item.classList.contains('hidden'));
+            
+            const visibleCount = visibleItems.length;
             const totalItems = itemsToCount.length;
             
-            document.getElementById('visible-cards').textContent = visibleItems;
+            // Calculate total quantity of visible cards
+            let visibleQuantity = 0;
+            visibleItems.forEach(item => {
+                // Get quantity from the card data
+                const quantityElement = item.querySelector('.mtg-card-quantity, .card-quantity-cell strong');
+                if (quantityElement) {
+                    const quantityText = quantityElement.textContent || quantityElement.innerText;
+                    const quantity = parseInt(quantityText.replace(/[^\d]/g, '')) || 0;
+                    visibleQuantity += quantity;
+                }
+            });
+            
+            document.getElementById('visible-cards').textContent = visibleCount;
             document.getElementById('total-cards').textContent = totalItems;
+            
+            // Update the total quantity display to show filtered quantity
+            const totalQuantitySpan = document.getElementById('total-quantity');
+            if (visibleCount < totalItems) {
+                totalQuantitySpan.textContent = visibleQuantity + ' / <?php echo $total_quantity; ?>';
+                totalQuantitySpan.parentElement.innerHTML = totalQuantitySpan.parentElement.innerHTML.replace(
+                    'Gesamt:', 'Gefiltert/Gesamt:'
+                );
+            } else {
+                totalQuantitySpan.textContent = '<?php echo $total_quantity; ?>';
+                totalQuantitySpan.parentElement.innerHTML = totalQuantitySpan.parentElement.innerHTML.replace(
+                    'Gefiltert/Gesamt:', 'Gesamt:'
+                );
+            }
         }
         
         // Highlight active filters
