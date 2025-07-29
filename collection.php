@@ -356,6 +356,223 @@ $user = $stmt->fetch();
         
         .mtg-card {
             transition: opacity 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .mtg-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        /* Karten-Detail-Modal */
+        .card-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .card-modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .card-modal-content {
+            background: white;
+            border-radius: 15px;
+            max-width: 800px;
+            max-height: 90vh;
+            width: 95%;
+            overflow-y: auto;
+            position: relative;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        
+        .card-modal.active .card-modal-content {
+            transform: scale(1);
+        }
+        
+        .card-modal-header {
+            padding: 20px 20px 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        
+        .card-modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        
+        .card-modal-close:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .card-modal-body {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .card-modal-body {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+        }
+        
+        .card-modal-image {
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+        
+        .card-modal-details {
+            color: #333;
+        }
+        
+        .card-modal-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            color: var(--primary-color);
+        }
+        
+        .card-modal-mana-cost {
+            margin-bottom: 15px;
+        }
+        
+        .card-modal-type {
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        
+        .card-modal-text {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .card-modal-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .card-modal-stat {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .card-modal-stat-label {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .card-modal-stat-value {
+            font-weight: 600;
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+        
+        .card-modal-actions {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 0 0 15px 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+        
+        .quantity-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .quantity-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: bold;
+        }
+        
+        .quantity-btn:hover {
+            background: var(--primary-light);
+            transform: scale(1.1);
+        }
+        
+        .quantity-display {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px 15px;
+            font-weight: 600;
+            min-width: 60px;
+            text-align: center;
+        }
+        
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+        
+        .btn-delete:hover {
+            background: #c82333;
+            transform: translateY(-1px);
+        }
+        
+        .card-modal-footer-text {
+            font-size: 0.9rem;
+            color: #666;
         }
         
         /* Filter highlight when active */
@@ -680,6 +897,7 @@ $user = $stmt->fetch();
                     $border_class = empty($colors) ? 'colorless' : (count($colors) > 1 ? 'multicolor' : strtolower($colors[0]));
                     ?>
                     <div class="mtg-card" 
+                         data-card-id="<?php echo $card['id']; ?>"
                          data-name="<?php echo htmlspecialchars(strtolower($card['card_name'])); ?>"
                          data-colors="<?php echo implode(',', $colors); ?>"
                          data-type="<?php echo htmlspecialchars(strtolower($card_data['type_line'] ?? '')); ?>"
@@ -743,6 +961,7 @@ $user = $stmt->fetch();
                         <?php foreach ($collection as $card): ?>
                             <?php $card_data = json_decode($card['card_data'], true); ?>
                             <tr class="card-row"
+                                data-card-id="<?php echo $card['id']; ?>"
                                 data-name="<?php echo htmlspecialchars(strtolower($card['card_name'])); ?>"
                                 data-colors="<?php echo implode(',', $card_data['colors'] ?? []); ?>"
                                 data-type="<?php echo htmlspecialchars(strtolower($card_data['type_line'] ?? '')); ?>"
@@ -1122,7 +1341,240 @@ $user = $stmt->fetch();
                 console.error('Error:', error);
             }
         }
+        
+        // Karten-Detail-Modal Funktionalität
+        function openCardModal(cardElement) {
+            const cardId = cardElement.dataset.cardId;
+            const cardName = cardElement.dataset.name;
+            
+            // Sammle Kartendaten aus den data-Attributen
+            const cardData = {
+                id: cardId,
+                name: cardName,
+                colors: cardElement.dataset.colors,
+                type: cardElement.dataset.type,
+                rarity: cardElement.dataset.rarity,
+                cmc: cardElement.dataset.cmc,
+                legendary: cardElement.dataset.legendary === 'true',
+                commander: cardElement.dataset.commander === 'true'
+            };
+            
+            // Finde die vollständigen Kartendaten aus dem PHP-Array
+            const allCards = <?php echo json_encode($collection); ?>;
+            const fullCardData = allCards.find(card => card.id == cardId);
+            
+            if (!fullCardData) {
+                console.error('Kartendaten nicht gefunden');
+                return;
+            }
+            
+            const parsedCardData = JSON.parse(fullCardData.card_data);
+            
+            // Modal HTML generieren
+            const modal = document.getElementById('cardModal');
+            const modalContent = modal.querySelector('.card-modal-content');
+            
+            modalContent.innerHTML = `
+                <div class="card-modal-header">
+                    <div></div>
+                    <button class="card-modal-close" onclick="closeCardModal()">&times;</button>
+                </div>
+                <div class="card-modal-body">
+                    <div>
+                        <img src="${parsedCardData.image_url || 'assets/images/card-back.jpg'}" 
+                             alt="${fullCardData.card_name}" 
+                             class="card-modal-image">
+                    </div>
+                    <div class="card-modal-details">
+                        <h2 class="card-modal-title">${fullCardData.card_name}</h2>
+                        
+                        ${parsedCardData.mana_cost ? `
+                            <div class="card-modal-mana-cost">
+                                ${renderManaCostJS(parsedCardData.mana_cost)}
+                            </div>
+                        ` : ''}
+                        
+                        <div class="card-modal-type">${parsedCardData.type_line || 'Unbekannter Typ'}</div>
+                        
+                        ${parsedCardData.oracle_text ? `
+                            <div class="card-modal-text">
+                                ${parsedCardData.oracle_text.replace(/\\n/g, '<br>')}
+                            </div>
+                        ` : ''}
+                        
+                        <div class="card-modal-stats">
+                            <div class="card-modal-stat">
+                                <div class="card-modal-stat-label">Mana-Kosten</div>
+                                <div class="card-modal-stat-value">${parsedCardData.cmc || 0}</div>
+                            </div>
+                            <div class="card-modal-stat">
+                                <div class="card-modal-stat-label">Seltenheit</div>
+                                <div class="card-modal-stat-value">${getRarityName(parsedCardData.rarity)}</div>
+                            </div>
+                            ${parsedCardData.power !== undefined && parsedCardData.toughness !== undefined ? `
+                                <div class="card-modal-stat">
+                                    <div class="card-modal-stat-label">Stärke/Widerstandskraft</div>
+                                    <div class="card-modal-stat-value">${parsedCardData.power}/${parsedCardData.toughness}</div>
+                                </div>
+                            ` : ''}
+                            <div class="card-modal-stat">
+                                <div class="card-modal-stat-label">Set</div>
+                                <div class="card-modal-stat-value">${parsedCardData.set_name || parsedCardData.set || 'Unbekannt'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-modal-actions">
+                    <div class="quantity-controls">
+                        <button class="quantity-btn" onclick="updateCardQuantity(${fullCardData.id}, ${fullCardData.quantity - 1})">-</button>
+                        <div class="quantity-display" id="modalQuantity">${fullCardData.quantity}x</div>
+                        <button class="quantity-btn" onclick="updateCardQuantity(${fullCardData.id}, ${fullCardData.quantity + 1})">+</button>
+                    </div>
+                    <div class="card-modal-footer-text">
+                        In Sammlung seit: ${new Date(fullCardData.added_at).toLocaleDateString('de-DE')}
+                    </div>
+                    <button class="btn-delete" onclick="deleteCard(${fullCardData.id})">
+                        🗑️ Aus Sammlung entfernen
+                    </button>
+                </div>
+            `;
+            
+            // Modal anzeigen
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeCardModal() {
+            const modal = document.getElementById('cardModal');
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+        
+        function renderManaCostJS(manaCost) {
+            // Vereinfachte JS-Version der Mana-Cost-Darstellung
+            return manaCost.replace(/\\{([WUBRG0-9XYZ]+)\\}/g, '<span class="mana-symbol mana-$1">$1</span>');
+        }
+        
+        function getRarityName(rarity) {
+            const rarityNames = {
+                'common': 'Häufig',
+                'uncommon': 'Ungewöhnlich', 
+                'rare': 'Selten',
+                'mythic': 'Sagenhaft',
+                'special': 'Speziell',
+                'bonus': 'Bonus'
+            };
+            return rarityNames[rarity] || rarity || 'Unbekannt';
+        }
+        
+        function updateCardQuantity(cardId, newQuantity) {
+            if (newQuantity < 0) newQuantity = 0;
+            
+            // AJAX-Request zur Aktualisierung
+            const formData = new FormData();
+            formData.append('action', 'update_quantity');
+            formData.append('card_id', cardId);
+            formData.append('quantity', newQuantity);
+            
+            fetch('collection.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                // Update Modal-Anzeige
+                const modalQuantity = document.getElementById('modalQuantity');
+                if (modalQuantity) {
+                    if (newQuantity === 0) {
+                        closeCardModal();
+                        location.reload(); // Seite neu laden um entfernte Karte zu verstecken
+                    } else {
+                        modalQuantity.textContent = newQuantity + 'x';
+                        
+                        // Update auch die Karte in der Grid-Ansicht
+                        const cardElement = document.querySelector(`[data-card-id="${cardId}"]`);
+                        if (cardElement) {
+                            const quantityDisplay = cardElement.querySelector('.mtg-card-quantity');
+                            if (quantityDisplay) {
+                                quantityDisplay.textContent = newQuantity + 'x vorhanden';
+                            }
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Fehler beim Aktualisieren der Menge:', error);
+                alert('Fehler beim Aktualisieren der Kartenmenge');
+            });
+        }
+        
+        function deleteCard(cardId) {
+            if (!confirm('Sind Sie sicher, dass Sie diese Karte aus Ihrer Sammlung entfernen möchten?')) {
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('action', 'delete_card');
+            formData.append('card_id', cardId);
+            
+            fetch('collection.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                closeCardModal();
+                location.reload(); // Seite neu laden
+            })
+            .catch(error => {
+                console.error('Fehler beim Löschen der Karte:', error);
+                alert('Fehler beim Löschen der Karte');
+            });
+        }
+        
+        // Event-Listener für Karten-Klicks hinzufügen
+        document.addEventListener('DOMContentLoaded', function() {
+            // Füge Click-Listener zu allen Karten hinzu (Grid-Ansicht)
+            document.querySelectorAll('.mtg-card').forEach(card => {
+                card.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    openCardModal(this);
+                });
+            });
+            
+            // Füge Click-Listener zu allen Tabellenzeilen hinzu
+            document.querySelectorAll('.card-row').forEach(row => {
+                row.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    openCardModal(this);
+                });
+                
+                // Füge Cursor-Pointer hinzu
+                row.style.cursor = 'pointer';
+            });
+            
+            // Modal schließen bei Klick außerhalb
+            document.getElementById('cardModal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeCardModal();
+                }
+            });
+            
+            // Escape-Taste zum Schließen
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    closeCardModal();
+                }
+            });
+        });
     </script>
+    
+    <!-- Karten-Detail-Modal -->
+    <div id="cardModal" class="card-modal">
+        <div class="card-modal-content">
+            <!-- Wird dynamisch mit JavaScript gefüllt -->
+        </div>
+    </div>
 </body>
 </html>
 

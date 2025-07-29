@@ -99,6 +99,147 @@ $total_success = 0;
 $total_errors = 0;
 $failed_cards = []; // Sammle fehlgeschlagene Karten für Feedback
 
+// AJAX-Endpoint für Import-Historie
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_history') {
+    header('Content-Type: application/json');
+    
+    try {
+        $history = getImportHistory($pdo, $_SESSION['user_id'], 3);
+        echo json_encode([
+            'success' => true,
+            'history' => $history
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+    }
+    exit();
+}
+
+// Undo-Funktionalität
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'undo_import') {
+    header('Content-Type: application/json');
+    
+    try {
+        $import_session_id = $_POST['import_session_id'] ?? '';
+        $user_id = $_SESSION['user_id'];
+        
+        if (empty($import_session_id)) {
+            throw new Exception('Import Session ID fehlt');
+        }
+        
+        // Transaktion starten
+        $pdo->beginTransaction();
+        
+        // Prüfe ob Import existiert und noch nicht rückgängig gemacht wurde
+        $stmt = $pdo->prepare("SELECT * FROM import_history WHERE import_session_id = ? AND user_id = ? AND status = 'completed'");
+        $stmt->execute([$import_session_id, $user_id]);
+        $import_record = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$import_record) {
+            throw new Exception('Import nicht gefunden oder bereits rückgängig gemacht');
+        }
+        
+        // Hole alle erfolgreich importierten Karten aus dieser Session
+        $stmt = $pdo->prepare("SELECT * FROM import_cards WHERE import_session_id = ? AND user_id = ? AND status = 'success' AND collection_id IS NOT NULL");
+        $stmt->execute([$import_session_id, $user_id]);
+        $imported_cards = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $removed_count = 0;
+        $errors = [];
+        
+        // Entferne jede Karte aus der Collection
+        foreach ($imported_cards as $card) {
+            try {
+                // Hole aktuellen Zustand der Karte in der Collection
+                $stmt = $pdo->prepare("SELECT quantity FROM collections WHERE id = ? AND user_id = ?");
+                $stmt->execute([$card['collection_id'], $user_id]);
+                $current = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($current) {
+                    $new_quantity = $current['quantity'] - $card['quantity'];
+                    
+                    if ($new_quantity <= 0) {
+                        // Karte komplett entfernen
+                        $stmt = $pdo->prepare("DELETE FROM collections WHERE id = ? AND user_id = ?");
+                        $stmt->execute([$card['collection_id'], $user_id]);
+                        $removed_count++;
+                    } else {
+                        // Menge reduzieren
+                        $stmt = $pdo->prepare("UPDATE collections SET quantity = ? WHERE id = ? AND user_id = ?");
+                        $stmt->execute([$new_quantity, $card['collection_id'], $user_id]);
+                        $removed_count++;
+                    }
+                } else {
+                    $errors[] = "Karte {$card['card_name']} nicht mehr in Collection gefunden";
+                }
+                
+            } catch (Exception $e) {
+                $errors[] = "Fehler bei Karte {$card['card_name']}: " . $e->getMessage();
+            }
+        }
+        
+        // Markiere Import als rückgängig gemacht
+        $stmt = $pdo->prepare("UPDATE import_history SET status = 'undone', undone_at = NOW() WHERE import_session_id = ? AND user_id = ?");
+        $stmt->execute([$import_session_id, $user_id]);
+        
+        // Transaktion bestätigen
+        $pdo->commit();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => "✅ Import erfolgreich rückgängig gemacht",
+            'removed_count' => $removed_count,
+            'total_cards' => count($imported_cards),
+            'errors' => $errors
+        ]);
+        
+    } catch (Exception $e) {
+        $pdo->rollback();
+        echo json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+    }
+    exit();
+}
+
+// Import-Historie laden
+function getImportHistory($pdo, $user_id, $limit = 3) {
+    try {
+        $limit = (int)$limit; // Sicherheit: Cast zu Integer
+        if ($limit <= 0) $limit = 3;
+        
+        $sql = "
+            SELECT 
+                ih.*,
+                COUNT(ic.id) as total_imported_cards,
+                SUM(CASE WHEN ic.status = 'success' THEN 1 ELSE 0 END) as successful_imported
+            FROM import_history ih
+            LEFT JOIN import_cards ic ON ih.import_session_id = ic.import_session_id
+            WHERE ih.user_id = ?
+            GROUP BY ih.id
+            ORDER BY ih.import_date DESC
+            LIMIT " . $limit;
+            
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$user_id]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch (Exception $e) {
+        error_log("Error loading import history: " . $e->getMessage());
+        return [];
+    }
+}
+
+// Import-Historie für aktuellen User laden
+$import_history = getImportHistory($pdo, $_SESSION['user_id'], 3);
+
+// Debug: Log die Import-Historie
+error_log("Import History Debug: " . json_encode($import_history));
+
 // Bulk Import verarbeiten
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'bulk_import') {
     // Für AJAX-Requests: Live-Update-Modus
@@ -110,11 +251,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $separator = $_POST['separator'] ?? 'newline';
         
         if (!empty($card_input)) {
+            // Generiere eindeutige Import-Session-ID
+            $import_session_id = md5(uniqid($_SESSION['user_id'] . time(), true));
+            
             // Console-Log starten
             echo "data: " . json_encode([
                 'type' => 'info',
                 'message' => "🚀 Bulk-Import gestartet...",
-                'timestamp' => date('H:i:s')
+                'timestamp' => date('H:i:s'),
+                'session_id' => $import_session_id
             ]) . "\n\n";
             flush();
             
@@ -152,6 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $total_processed = count($card_names);
             $total_success = 0;
             $total_errors = 0;
+            $failed_cards = []; // Sammle fehlgeschlagene Karten
             
             echo "data: " . json_encode([
                 'type' => 'info',
@@ -188,6 +334,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         'reason' => 'Nicht in Scryfall API gefunden',
                         'suggestions' => []
                     ];
+                    
+                    // Import-Tracking für fehlgeschlagene Karte
+                    try {
+                        $stmt = $pdo->prepare("INSERT INTO import_cards (import_session_id, user_id, card_name, quantity, collection_id, import_order, status) VALUES (?, ?, ?, 1, NULL, ?, 'failed')");
+                        $stmt->execute([$import_session_id, $_SESSION['user_id'], $card_name, $index + 1]);
+                    } catch (Exception $e) {
+                        // Tracking-Fehler nicht kritisch
+                        error_log("Import tracking error: " . $e->getMessage());
+                    }
+                    
                     continue;
                 }
                 
@@ -212,11 +368,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $stmt->execute([$_SESSION['user_id'], $card_data['name']]);
                     $existing = $stmt->fetch();
                     
+                    $collection_id = null;
+                    
                     if ($existing) {
                         // Anzahl erhöhen
                         $new_quantity = $existing['quantity'] + 1;
                         $stmt = $pdo->prepare("UPDATE collections SET quantity = ?, card_data = ? WHERE id = ?");
                         $stmt->execute([$new_quantity, json_encode($card_data), $existing['id']]);
+                        $collection_id = $existing['id'];
                         
                         echo "data: " . json_encode([
                             'type' => 'success',
@@ -228,6 +387,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         // Neue Karte hinzufügen
                         $stmt = $pdo->prepare("INSERT INTO collections (user_id, card_name, card_data, quantity) VALUES (?, ?, ?, 1)");
                         $stmt->execute([$_SESSION['user_id'], $card_data['name'], json_encode($card_data)]);
+                        $collection_id = $pdo->lastInsertId();
                         
                         echo "data: " . json_encode([
                             'type' => 'success',
@@ -236,6 +396,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ]) . "\n\n";
                         flush();
                     }
+                    
+                    // Import-Tracking hinzufügen
+                    $stmt = $pdo->prepare("INSERT INTO import_cards (import_session_id, user_id, card_name, quantity, collection_id, import_order, status) VALUES (?, ?, ?, 1, ?, ?, 'success')");
+                    $stmt->execute([$import_session_id, $_SESSION['user_id'], $card_data['name'], $collection_id, $index + 1]);
                     
                     $total_success++;
                     
@@ -247,6 +411,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     ]) . "\n\n";
                     flush();
                     $total_errors++;
+                    
+                    // Fehlgeschlagene Karte für Feedback sammeln
+                    $failed_cards[] = [
+                        'input' => $card_name,
+                        'reason' => 'Datenbankfehler: ' . $e->getMessage(),
+                        'suggestions' => []
+                    ];
+                    
+                    // Import-Tracking für fehlgeschlagene Karte
+                    try {
+                        $stmt = $pdo->prepare("INSERT INTO import_cards (import_session_id, user_id, card_name, quantity, collection_id, import_order, status) VALUES (?, ?, ?, 1, NULL, ?, 'failed')");
+                        $stmt->execute([$import_session_id, $_SESSION['user_id'], $card_name, $index + 1]);
+                    } catch (Exception $e2) {
+                        // Tracking-Fehler nicht kritisch
+                        error_log("Import tracking error: " . $e2->getMessage());
+                    }
                 }
                 
                 // Kleine Pause zwischen API-Anfragen (Rate Limiting respektieren)
@@ -261,12 +441,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ]) . "\n\n";
             flush();
             
+            // Import-Historie in Datenbank speichern
+            try {
+                $import_summary = [
+                    'total_processed' => $total_processed,
+                    'total_success' => $total_success,
+                    'total_errors' => $total_errors,
+                    'failed_cards' => $failed_cards,
+                    'session_id' => $import_session_id
+                ];
+                
+                $stmt = $pdo->prepare("INSERT INTO import_history (user_id, import_session_id, total_cards, successful_cards, failed_cards, import_summary, status) VALUES (?, ?, ?, ?, ?, ?, 'completed')");
+                $stmt->execute([
+                    $_SESSION['user_id'], 
+                    $import_session_id, 
+                    $total_processed, 
+                    $total_success, 
+                    $total_errors, 
+                    json_encode($import_summary)
+                ]);
+                
+                echo "data: " . json_encode([
+                    'type' => 'success',
+                    'message' => "💾 Import-Historie gespeichert",
+                    'timestamp' => date('H:i:s')
+                ]) . "\n\n";
+                flush();
+                
+            } catch (Exception $e) {
+                echo "data: " . json_encode([
+                    'type' => 'warning',
+                    'message' => "⚠️ Import-Historie konnte nicht gespeichert werden: " . $e->getMessage(),
+                    'timestamp' => date('H:i:s')
+                ]) . "\n\n";
+                flush();
+            }
+            
             // Zusammenfassung und Feedback
             $summary_data = [
                 'total_processed' => $total_processed,
                 'total_success' => $total_success,
                 'total_errors' => $total_errors,
-                'failed_cards' => $failed_cards ?? []
+                'failed_cards' => $failed_cards ?? [],
+                'import_session_id' => $import_session_id
             ];
             
             echo "data: " . json_encode([
@@ -446,9 +663,33 @@ $user = $stmt->fetch();
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         .bulk-import-container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
+        }
+
+        .import-layout {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 1200px) {
+            .import-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .main-import-section {
+            grid-column: 1;
+        }
+
+        .undo-panel {
+            grid-column: 2;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
         }
         
         .import-section {
@@ -778,6 +1019,145 @@ $user = $stmt->fetch();
             }
         }
         
+        
+        /* Undo Panel Styles */
+        .undo-panel-card {
+            background: var(--card-background);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .undo-panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            border-radius: 12px 12px 0 0;
+            color: white;
+        }
+
+        .undo-panel-header h5 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .undo-panel-content {
+            padding: 1rem;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .undo-item {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            transition: all 0.2s;
+        }
+
+        .undo-item:hover {
+            border-color: var(--primary-color);
+            background: rgba(44, 95, 65, 0.1);
+        }
+
+        .undo-item.undone {
+            opacity: 0.6;
+            background: rgba(114, 114, 114, 0.1);
+            border-color: #666;
+        }
+
+        .undo-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .undo-item-date {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .undo-item-stats {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .undo-item-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .undo-item-stat.success {
+            color: #10b981;
+        }
+
+        .undo-item-stat.error {
+            color: #ef4444;
+        }
+
+        .undo-item-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-undo {
+            background: var(--warning-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .btn-undo:hover:not(:disabled) {
+            background: #e67e22;
+            transform: translateY(-1px);
+        }
+
+        .btn-undo:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-view-details {
+            background: var(--secondary-color);
+            color: var(--background-color);
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-view-details:hover {
+            background: #c39c12;
+        }
+
+        .undo-empty {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .undo-empty i {
+            font-size: 3rem;
+            opacity: 0.3;
+            margin-bottom: 1rem;
+        }
+
         /* Korrektur-Interface Styles */
         .correction-input:focus {
             outline: none;
@@ -810,8 +1190,10 @@ $user = $stmt->fetch();
             <p>Mehrere Karten gleichzeitig zur Sammlung hinzufügen</p>
         </div>
         
-        <div class="import-section">
-            <h2>Kartennamen eingeben</h2>
+        <div class="import-layout">
+            <div class="main-import-section">
+                <div class="import-section">
+                    <h2>Kartennamen eingeben</h2>
             
             <div class="help-text">
                 <h4>Anleitung:</h4>
@@ -952,6 +1334,26 @@ Ancestral Recall
 Time Walk
 Mox Sapphire
 Mox Ruby</textarea>
+                </div>
+            </div>
+        </div>
+            </div>
+            
+            <!-- Undo Panel rechts von der Console -->
+            <div class="undo-panel">
+                <div class="undo-panel-card">
+                    <div class="undo-panel-header">
+                        <h5><i class="fas fa-history"></i> Import-Historie</h5>
+                        <small>Letzte 3 Bulk-Imports rückgängig machen</small>
+                    </div>
+                    <div class="undo-panel-content" id="undoHistoryContent">
+                        <!-- Wird dynamisch mit JavaScript gefüllt -->
+                        <div class="undo-empty">
+                            <i class="fas fa-history"></i>
+                            <p>Noch keine Imports durchgeführt</p>
+                            <small>Nach einem Bulk-Import erscheinen hier die Undo-Optionen</small>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1133,6 +1535,9 @@ Mox Ruby</textarea>
             }
             
             addConsoleMessage('info', '─'.repeat(80));
+            
+            // Update Import-Historie nach erfolgreichem Import
+            updateImportHistoryAfterImport(summary);
         }
 
         // Korrektur-Interface für fehlgeschlagene Karten
@@ -1250,6 +1655,9 @@ Mox Ruby</textarea>
             addConsoleMessage('info', '💡 Console bereit - Starten Sie einen Import um Live-Updates zu sehen');
             addConsoleMessage('info', '🔗 Karten werden über die Scryfall API gesucht und validiert');
             
+            // Lade Import-Historie
+            loadImportHistory();
+            
             // Beispiel-Buttons für Schnellstart
             document.querySelectorAll('textarea[readonly]').forEach(textarea => {
                 textarea.addEventListener('click', function() {
@@ -1258,6 +1666,254 @@ Mox Ruby</textarea>
                 });
             });
         });
+
+        // Import-Historie laden und anzeigen
+        function loadImportHistory() {
+            const historyContent = document.getElementById('undoHistoryContent');
+            
+            // PHP-Daten aus Server-Side einbetten
+            const importHistory = <?php echo json_encode($import_history); ?>;
+            
+            // Debug-Output
+            console.log('Import History Data:', importHistory);
+            
+            if (!importHistory || importHistory.length === 0) {
+                console.log('No import history found');
+                historyContent.innerHTML = `
+                    <div class="undo-empty">
+                        <i class="fas fa-history"></i>
+                        <p>Noch keine Imports durchgeführt</p>
+                        <small>Nach einem Bulk-Import erscheinen hier die Undo-Optionen</small>
+                    </div>
+                `;
+                return;
+            }
+            
+            console.log(`Loading ${importHistory.length} import history items`);
+            
+            let historyHtml = '';
+            importHistory.forEach((item, index) => {
+                console.log(`Processing item ${index}:`, item);
+                
+                const date = new Date(item.import_date).toLocaleString('de-DE', {
+                    day: '2-digit',
+                    month: '2-digit', 
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                console.log(`Formatted date: ${date}`);
+                
+                const isUndone = item.status === 'undone';
+                const undoneClass = isUndone ? 'undone' : '';
+                
+                historyHtml += `
+                    <div class="undo-item ${undoneClass}">
+                        <div class="undo-item-header">
+                            <div class="undo-item-date">
+                                <i class="fas fa-clock"></i> ${date}
+                            </div>
+                            ${isUndone ? '<span style="color: #666; font-size: 0.8rem;"><i class="fas fa-undo"></i> Rückgängig gemacht</span>' : ''}
+                        </div>
+                        <div class="undo-item-stats">
+                            <div class="undo-item-stat success">
+                                <i class="fas fa-check"></i> ${item.successful_cards} erfolgreich
+                            </div>
+                            <div class="undo-item-stat error">
+                                <i class="fas fa-times"></i> ${item.failed_cards} fehlerhaft
+                            </div>
+                            <div class="undo-item-stat">
+                                <i class="fas fa-layer-group"></i> ${item.total_cards} gesamt
+                            </div>
+                        </div>
+                        <div class="undo-item-actions">
+                            <button type="button" 
+                                    class="btn-undo" 
+                                    onclick="undoImport('${item.import_session_id}')"
+                                    ${isUndone ? 'disabled' : ''}>
+                                <i class="fas fa-undo"></i> 
+                                ${isUndone ? 'Bereits rückgängig' : 'Rückgängig machen'}
+                            </button>
+                            <button type="button" 
+                                    class="btn-view-details" 
+                                    onclick="viewImportDetails('${item.import_session_id}')">
+                                <i class="fas fa-info-circle"></i> Details
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            console.log('Generated HTML length:', historyHtml.length);
+            historyContent.innerHTML = historyHtml;
+            console.log('History content updated');
+        }
+
+        // Import rückgängig machen
+        function undoImport(sessionId) {
+            if (!confirm('Sind Sie sicher, dass Sie diesen Import rückgängig machen möchten?\\n\\nAlle Karten aus diesem Import werden aus Ihrer Sammlung entfernt.')) {
+                return;
+            }
+            
+            const button = event.target.closest('.btn-undo');
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Wird rückgängig gemacht...';
+            
+            const formData = new FormData();
+            formData.append('action', 'undo_import');
+            formData.append('import_session_id', sessionId);
+            
+            fetch('bulk_import.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    addConsoleMessage('success', '✅ ' + data.message);
+                    addConsoleMessage('info', `📊 ${data.removed_count} von ${data.total_cards} Karten entfernt`);
+                    
+                    if (data.errors && data.errors.length > 0) {
+                        data.errors.forEach(error => {
+                            addConsoleMessage('warning', '⚠️ ' + error);
+                        });
+                    }
+                    
+                    // Historie neu laden
+                    setTimeout(() => {
+                        location.reload(); // Einfache Lösung: Seite neu laden
+                    }, 1500);
+                    
+                } else {
+                    addConsoleMessage('error', '❌ Fehler beim Rückgängigmachen: ' + data.error);
+                    button.disabled = false;
+                    button.innerHTML = '<i class="fas fa-undo"></i> Rückgängig machen';
+                }
+            })
+            .catch(error => {
+                console.error('Undo error:', error);
+                addConsoleMessage('error', '❌ Verbindungsfehler beim Rückgängigmachen');
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-undo"></i> Rückgängig machen';
+            });
+        }
+
+        // Import-Details anzeigen
+        function viewImportDetails(sessionId) {
+            addConsoleMessage('info', `🔍 Lade Details für Import-Session: ${sessionId}`);
+            
+            // Hier könnte eine detaillierte Ansicht implementiert werden
+            // Für jetzt zeigen wir nur die Session-ID
+            const historyItem = <?php echo json_encode($import_history); ?>.find(item => item.import_session_id === sessionId);
+            if (historyItem && historyItem.import_summary) {
+                try {
+                    const summary = JSON.parse(historyItem.import_summary);
+                    addConsoleMessage('info', `📋 Import-Details für ${new Date(historyItem.import_date).toLocaleString('de-DE')}:`);
+                    addConsoleMessage('info', `  📊 ${summary.total_processed} Karten verarbeitet`);
+                    addConsoleMessage('success', `  ✅ ${summary.total_success} erfolgreich hinzugefügt`);
+                    if (summary.total_errors > 0) {
+                        addConsoleMessage('error', `  ❌ ${summary.total_errors} fehlgeschlagen`);
+                    }
+                } catch (e) {
+                    addConsoleMessage('warning', '⚠️ Import-Details konnten nicht geladen werden');
+                }
+            }
+        }
+
+        // Update Import-Historie nach erfolgreichem Import
+        function updateImportHistoryAfterImport(summaryData) {
+            if (summaryData && summaryData.import_session_id) {
+                addConsoleMessage('info', '🔄 Aktualisiere Import-Historie...');
+                
+                // Nach kurzem Delay die Historie neu laden via AJAX
+                setTimeout(() => {
+                    fetch('bulk_import.php?action=get_history')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Aktualisiere das Undo-Panel mit neuen Daten
+                                updateUndoPanel(data.history);
+                                addConsoleMessage('success', '✅ Import-Historie aktualisiert - Undo-Option verfügbar');
+                            } else {
+                                addConsoleMessage('warning', '⚠️ Historie konnte nicht aktualisiert werden');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('History update error:', error);
+                            addConsoleMessage('warning', '⚠️ Historie-Update fehlgeschlagen');
+                        });
+                }, 2000);
+            }
+        }
+
+        // Undo-Panel mit neuen Daten aktualisieren
+        function updateUndoPanel(newHistory) {
+            const historyContent = document.getElementById('undoHistoryContent');
+            
+            if (!newHistory || newHistory.length === 0) {
+                historyContent.innerHTML = `
+                    <div class="undo-empty">
+                        <i class="fas fa-history"></i>
+                        <p>Noch keine Imports durchgeführt</p>
+                        <small>Nach einem Bulk-Import erscheinen hier die Undo-Optionen</small>
+                    </div>
+                `;
+                return;
+            }
+            
+            let historyHtml = '';
+            newHistory.forEach((item, index) => {
+                const date = new Date(item.import_date).toLocaleString('de-DE', {
+                    day: '2-digit',
+                    month: '2-digit', 
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                const isUndone = item.status === 'undone';
+                const undoneClass = isUndone ? 'undone' : '';
+                
+                historyHtml += `
+                    <div class="undo-item ${undoneClass}">
+                        <div class="undo-item-header">
+                            <div class="undo-item-date">
+                                <i class="fas fa-clock"></i> ${date}
+                            </div>
+                            ${isUndone ? '<span style="color: #666; font-size: 0.8rem;"><i class="fas fa-undo"></i> Rückgängig gemacht</span>' : ''}
+                        </div>
+                        <div class="undo-item-stats">
+                            <div class="undo-item-stat success">
+                                <i class="fas fa-check"></i> ${item.successful_cards} erfolgreich
+                            </div>
+                            <div class="undo-item-stat error">
+                                <i class="fas fa-times"></i> ${item.failed_cards} fehlerhaft
+                            </div>
+                            <div class="undo-item-stat">
+                                <i class="fas fa-layer-group"></i> ${item.total_cards} gesamt
+                            </div>
+                        </div>
+                        <div class="undo-item-actions">
+                            <button type="button" 
+                                    class="btn-undo" 
+                                    onclick="undoImport('${item.import_session_id}')"
+                                    ${isUndone ? 'disabled' : ''}>
+                                <i class="fas fa-undo"></i> 
+                                ${isUndone ? 'Bereits rückgängig' : 'Rückgängig machen'}
+                            </button>
+                            <button type="button" 
+                                    class="btn-view-details" 
+                                    onclick="viewImportDetails('${item.import_session_id}')">
+                                <i class="fas fa-info-circle"></i> Details
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            historyContent.innerHTML = historyHtml;
+        }
     </script>
     
     <?php include 'includes/footer.php'; ?>
