@@ -24,27 +24,51 @@ try {
     ");
     
     $stmt->execute([$_SESSION['user_id']]);
-    $commanders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $potential_commanders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Filtere zusätzlich durch card_data Parsing wenn vorhanden
-    $filtered_commanders = [];
-    foreach ($commanders as $commander) {
+    // Filtere und erweitere durch card_data Parsing
+    $commanders = [];
+    foreach ($potential_commanders as $commander) {
         $card_data = $commander['card_data'] ? json_decode($commander['card_data'], true) : null;
         
         if ($card_data) {
             // Prüfe ob es eine legendäre Kreatur oder Planeswalker ist
             $type_line = strtolower($card_data['type_line'] ?? '');
-            if (strpos($type_line, 'legendary') !== false && 
-                (strpos($type_line, 'creature') !== false || strpos($type_line, 'planeswalker') !== false)) {
-                $filtered_commanders[] = $commander;
+            $is_legendary = strpos($type_line, 'legendary') !== false;
+            $is_creature_or_pw = (strpos($type_line, 'creature') !== false || strpos($type_line, 'planeswalker') !== false);
+            
+            if ($is_legendary && $is_creature_or_pw) {
+                // Extrahiere Color Identity für Anzeige
+                $color_identity = [];
+                if (isset($card_data['color_identity']) && is_array($card_data['color_identity'])) {
+                    $color_identity = $card_data['color_identity'];
+                } else {
+                    // Fallback: extract from mana_cost
+                    $mana_cost = $card_data['mana_cost'] ?? '';
+                    if (strpos($mana_cost, 'W') !== false) $color_identity[] = 'W';
+                    if (strpos($mana_cost, 'U') !== false) $color_identity[] = 'U';
+                    if (strpos($mana_cost, 'B') !== false) $color_identity[] = 'B';
+                    if (strpos($mana_cost, 'R') !== false) $color_identity[] = 'R';
+                    if (strpos($mana_cost, 'G') !== false) $color_identity[] = 'G';
+                }
+                
+                $commanders[] = [
+                    'card_name' => $commander['card_name'],
+                    'color_identity' => $color_identity,
+                    'colors_display' => implode('', $color_identity)
+                ];
             }
         } else {
             // Fallback: Verwende den Namen wenn keine Daten verfügbar sind
-            $filtered_commanders[] = $commander;
+            $commanders[] = [
+                'card_name' => $commander['card_name'],
+                'color_identity' => [],
+                'colors_display' => ''
+            ];
         }
     }
     
-    echo json_encode(['commanders' => $filtered_commanders]);
+    echo json_encode(['commanders' => $commanders]);
     
 } catch (Exception $e) {
     echo json_encode(['error' => $e->getMessage()]);

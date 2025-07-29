@@ -78,6 +78,89 @@ try {
     $error_message = "Fehler beim Laden der Decks: " . $e->getMessage();
 }
 
+// Function to extract commander's color identity
+function getCommanderColorIdentity($pdo, $commander_name, $user_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT card_data FROM collections WHERE user_id = ? AND card_name = ? LIMIT 1");
+        $stmt->execute([$user_id, $commander_name]);
+        $result = $stmt->fetch();
+        
+        if ($result && $result['card_data']) {
+            $card_data = json_decode($result['card_data'], true);
+            
+            // Extract color identity from mana cost and color identity field
+            $colors = [];
+            
+            // Check color_identity field first (most accurate)
+            if (isset($card_data['color_identity']) && is_array($card_data['color_identity'])) {
+                $colors = $card_data['color_identity'];
+            } else {
+                // Fallback: extract from mana_cost
+                $mana_cost = $card_data['mana_cost'] ?? '';
+                
+                if (strpos($mana_cost, 'W') !== false) $colors[] = 'W';
+                if (strpos($mana_cost, 'U') !== false) $colors[] = 'U';
+                if (strpos($mana_cost, 'B') !== false) $colors[] = 'B';
+                if (strpos($mana_cost, 'R') !== false) $colors[] = 'R';
+                if (strpos($mana_cost, 'G') !== false) $colors[] = 'G';
+                
+                // Remove duplicates
+                $colors = array_unique($colors);
+            }
+            
+            return $colors;
+        }
+    } catch (Exception $e) {
+        error_log("Error extracting commander color identity: " . $e->getMessage());
+    }
+    
+    // Fallback: return all colors if we can't determine
+    return ['W', 'U', 'B', 'R', 'G'];
+}
+
+// Function to check if a card is legal in commander color identity
+function isCardLegalInCommander($card_data, $commander_colors) {
+    if (empty($commander_colors)) {
+        return true; // If no commander colors defined, allow all
+    }
+    
+    if (!$card_data) {
+        return true; // If no card data, allow (basic lands etc.)
+    }
+    
+    $card_data_array = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+    
+    if (!$card_data_array) {
+        return true; // If can't parse, allow
+    }
+    
+    // Get card's color identity
+    $card_colors = [];
+    
+    // Check color_identity field first
+    if (isset($card_data_array['color_identity']) && is_array($card_data_array['color_identity'])) {
+        $card_colors = $card_data_array['color_identity'];
+    } else {
+        // Fallback: extract from mana_cost
+        $mana_cost = $card_data_array['mana_cost'] ?? '';
+        
+        if (strpos($mana_cost, 'W') !== false) $card_colors[] = 'W';
+        if (strpos($mana_cost, 'U') !== false) $card_colors[] = 'U';
+        if (strpos($mana_cost, 'B') !== false) $card_colors[] = 'B';
+        if (strpos($mana_cost, 'R') !== false) $card_colors[] = 'R';
+        if (strpos($mana_cost, 'G') !== false) $card_colors[] = 'G';
+    }
+    
+    // Check if all card colors are in commander's color identity
+    foreach ($card_colors as $color) {
+        if (!in_array($color, $commander_colors)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
 // Enhanced AI Deck Generation Function
 function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id, $options = []) {
     $commander = $options['commander'] ?? '';
@@ -100,11 +183,20 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             ];
         }
         
-        // Add Commander first if specified
+        // Add Commander first if specified and extract color identity
+        $commander_colors = [];
         if (!empty($commander) && $format === 'Commander') {
             $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard, is_commander) VALUES (?, ?, 1, 0, 1)");
             $stmt->execute([$deck_id, $commander]);
-            $deck_size--; // Reduce target since commander is already added
+            
+            // Extract commander's color identity from user's collection
+            $commander_colors = getCommanderColorIdentity($pdo, $commander, $user_id);
+        }
+        
+        // Calculate correct target based on deck size and format rules
+        $actual_deck_size = $deck_size;
+        if ($format === 'Commander') {
+            $actual_deck_size = 99; // Commander format ist immer 99 + 1 Commander = 100
         }
         
         // Strategy-based card selection with AI features
@@ -112,56 +204,141 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         
         // Enhanced mana curve based on AI features
         if (in_array('mana_curve', $ai_features)) {
+            // Angepasste Mana-Kurven für verschiedene Deck-Größen
+            $curve_multiplier = $actual_deck_size / 60; // Skaliere basierend auf Deck-Größe
+            
             switch ($strategy) {
                 case 'Aggro':
-                    $mana_curve = [1 => 12, 2 => 16, 3 => 8, 4 => 4, 5 => 2, 6 => 1];
+                    $base_curve = [1 => 12, 2 => 16, 3 => 8, 4 => 4, 5 => 2, 6 => 1];
                     break;
                 case 'Control':
-                    $mana_curve = [1 => 4, 2 => 8, 3 => 10, 4 => 10, 5 => 8, 6 => 6];
+                    $base_curve = [1 => 4, 2 => 8, 3 => 10, 4 => 10, 5 => 8, 6 => 6];
                     break;
                 case 'Midrange':
-                    $mana_curve = [1 => 6, 2 => 10, 3 => 12, 4 => 10, 5 => 6, 6 => 4];
+                    $base_curve = [1 => 6, 2 => 10, 3 => 12, 4 => 10, 5 => 6, 6 => 4];
                     break;
                 case 'Combo':
-                    $mana_curve = [1 => 8, 2 => 12, 3 => 8, 4 => 8, 5 => 6, 6 => 4];
+                    $base_curve = [1 => 8, 2 => 12, 3 => 8, 4 => 8, 5 => 6, 6 => 4];
                     break;
                 default:
-                    $mana_curve = [1 => 8, 2 => 10, 3 => 10, 4 => 8, 5 => 6, 6 => 4];
+                    $base_curve = [1 => 8, 2 => 10, 3 => 10, 4 => 8, 5 => 6, 6 => 4];
+            }
+            
+            // Skaliere die Kurve für die Deck-Größe
+            foreach ($base_curve as $cmc => $count) {
+                $mana_curve[$cmc] = round($count * $curve_multiplier);
             }
         } else {
-            // Standard mana curve
-            $mana_curve = [1 => 6, 2 => 8, 3 => 8, 4 => 6, 5 => 4, 6 => 3];
+            // Standard mana curve - auch skaliert
+            $curve_multiplier = $actual_deck_size / 60;
+            $base_curve = [1 => 6, 2 => 8, 3 => 8, 4 => 6, 5 => 4, 6 => 3];
+            foreach ($base_curve as $cmc => $count) {
+                $mana_curve[$cmc] = round($count * $curve_multiplier);
+            }
         }
         
-        // Add cards based on enhanced AI logic
+        // Calculate land count based on deck size and format
+        $land_count = 0;
+        if (in_array('balance', $ai_features)) {
+            if ($format === 'Commander') {
+                $land_count = 36; // Standard für Commander
+            } else {
+                $land_count = round($actual_deck_size * 0.4); // 40% Länder
+            }
+        }
+        
+        // Berechne verfügbare Slots für Nicht-Land-Karten
+        $non_land_slots = $actual_deck_size - $land_count;
+        $spell_target = min($non_land_slots, count($user_cards) * 2); // Begrenze auf verfügbare Karten
+        
         $added_cards = 0;
-        $target_cards = min($deck_size, count($user_cards) * 2); // Reasonable limit
         
         // Add lands first if balance feature is enabled
-        if (in_array('balance', $ai_features)) {
-            $land_count = $format === 'Commander' ? 36 : 24;
-            $basic_lands = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'];
+        if (in_array('balance', $ai_features) && $land_count > 0) {
+            // For Commander, only add basic lands that match color identity
+            if ($format === 'Commander' && !empty($commander_colors)) {
+                $available_basics = [];
+                if (in_array('W', $commander_colors)) $available_basics[] = 'Plains';
+                if (in_array('U', $commander_colors)) $available_basics[] = 'Island';
+                if (in_array('B', $commander_colors)) $available_basics[] = 'Swamp';
+                if (in_array('R', $commander_colors)) $available_basics[] = 'Mountain';
+                if (in_array('G', $commander_colors)) $available_basics[] = 'Forest';
+                
+                // If no colors (colorless commander), add all basics
+                if (empty($available_basics)) {
+                    $available_basics = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
+                }
+                
+                $basic_lands = $available_basics;
+            } else {
+                $basic_lands = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'];
+            }
             
-            for ($i = 0; $i < $land_count && $added_cards < $target_cards; $i++) {
+            for ($i = 0; $i < $land_count; $i++) {
                 $land = $basic_lands[array_rand($basic_lands)];
                 $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, 1, 0)");
                 $stmt->execute([$deck_id, $land]);
-                $added_cards++;
             }
         }
         
         // Add creatures and spells based on mana curve
         foreach ($mana_curve as $cmc => $count) {
-            for ($i = 0; $i < $count && $added_cards < $target_cards; $i++) {
+            for ($i = 0; $i < $count && $added_cards < $spell_target; $i++) {
                 if (!empty($user_cards)) {
-                    $random_card = $user_cards[array_rand($user_cards)];
-                    $quantity = ($format === 'Commander') ? 1 : rand(1, min(4, $target_cards - $added_cards));
+                    $attempts = 0;
+                    $max_attempts = count($user_cards) * 2; // Verhindere Endlosschleife
                     
-                    // Avoid adding the same card as commander
-                    if ($random_card['card_name'] !== $commander) {
+                    do {
+                        $random_card = $user_cards[array_rand($user_cards)];
+                        $attempts++;
+                        
+                        // Prüfe Commander Color Identity für Commander-Format
+                        $is_legal = true;
+                        if ($format === 'Commander' && !empty($commander_colors)) {
+                            $is_legal = isCardLegalInCommander($random_card['card_data'] ?? null, $commander_colors);
+                        }
+                        
+                    } while (!$is_legal && $random_card['card_name'] === $commander && $attempts < $max_attempts);
+                    
+                    if ($attempts < $max_attempts && $random_card['card_name'] !== $commander) {
+                        // Bestimme Quantität basierend auf Format-Regeln
+                        if ($format === 'Commander') {
+                            $quantity = 1; // Commander format: max 1 von jeder Karte (außer Basic Lands)
+                        } else {
+                            $quantity = min(4, $spell_target - $added_cards); // Standard: max 4, aber nicht mehr als verfügbar
+                        }
+                        
                         $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
                         $stmt->execute([$deck_id, $random_card['card_name'], $quantity]);
                         $added_cards += $quantity;
+                    }
+                }
+            }
+        }
+        
+        // Fill remaining slots if needed
+        $total_non_lands = $added_cards;
+        $remaining_slots = $spell_target - $total_non_lands;
+        
+        if ($remaining_slots > 0) {
+            $attempts = 0;
+            $max_fill_attempts = count($user_cards) * 3;
+            
+            for ($i = 0; $i < $remaining_slots && $attempts < $max_fill_attempts; $attempts++) {
+                if (!empty($user_cards)) {
+                    $random_card = $user_cards[array_rand($user_cards)];
+                    
+                    // Prüfe Commander Color Identity für Commander-Format
+                    $is_legal = true;
+                    if ($format === 'Commander' && !empty($commander_colors)) {
+                        $is_legal = isCardLegalInCommander($random_card['card_data'] ?? null, $commander_colors);
+                    }
+                    
+                    if ($is_legal && $random_card['card_name'] !== $commander) {
+                        $quantity = ($format === 'Commander') ? 1 : min(4, $remaining_slots - $i);
+                        $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
+                        $stmt->execute([$deck_id, $random_card['card_name'], $quantity]);
+                        $i += $quantity; // Adjust counter for quantity
                     }
                 }
             }
@@ -632,10 +809,19 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
             if (format === 'Commander') {
                 commanderSection.style.display = 'block';
                 deckSizeSelect.value = '100';
+                deckSizeSelect.disabled = true; // Commander ist immer 100 Karten
                 loadCommanders();
             } else {
                 commanderSection.style.display = 'none';
-                deckSizeSelect.value = '60';
+                deckSizeSelect.disabled = false;
+                // Setze auf Standard-Werte für andere Formate
+                if (format === 'Standard' || format === 'Modern' || format === 'Pioneer') {
+                    deckSizeSelect.value = '60';
+                } else if (format === 'Pauper' || format === 'Historic') {
+                    deckSizeSelect.value = '60';
+                } else {
+                    deckSizeSelect.value = '60'; // Default
+                }
             }
         }
         
@@ -652,7 +838,14 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
                         data.commanders.forEach(commander => {
                             const option = document.createElement('option');
                             option.value = commander.card_name;
-                            option.textContent = commander.card_name;
+                            
+                            // Zeige Color Identity in der Anzeige
+                            let displayText = commander.card_name;
+                            if (commander.colors_display) {
+                                displayText += ` (${commander.colors_display})`;
+                            }
+                            
+                            option.textContent = displayText;
                             commanderSelect.appendChild(option);
                         });
                     } else {
@@ -674,6 +867,7 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
             const format = document.querySelector('select[name="format"]').value;
             const strategy = document.getElementById('selectedStrategy').value;
             const name = document.querySelector('input[name="name"]').value;
+            const deckSize = parseInt(document.querySelector('select[name="deck_size"]').value);
             
             if (!format) {
                 e.preventDefault();
@@ -690,6 +884,19 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
             if (!name.trim()) {
                 e.preventDefault();
                 alert('Bitte geben Sie einen Deck-Namen ein!');
+                return;
+            }
+            
+            // Format-spezifische Validierung
+            if (format === 'Commander' && deckSize !== 100) {
+                e.preventDefault();
+                alert('Commander-Decks müssen genau 100 Karten haben!');
+                return;
+            }
+            
+            if ((format === 'Standard' || format === 'Modern' || format === 'Pioneer') && deckSize < 60) {
+                e.preventDefault();
+                alert('Konstruierte Formate benötigen mindestens 60 Karten!');
                 return;
             }
         });
