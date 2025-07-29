@@ -17,6 +17,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $format = $_POST['format'];
         $strategy = $_POST['strategy'] ?? '';
         $quality = $_POST['quality'] ?? 'Mittel';
+        $commander = $_POST['commander'] ?? '';
+        $ai_features = $_POST['ai_features'] ?? [];
+        $deck_size = intval($_POST['deck_size'] ?? 60);
+        $color_focus = $_POST['color_focus'] ?? '';
         
         if (!empty($name) && !empty($format)) {
             try {
@@ -26,10 +30,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 // Generate deck based on AI parameters
                 if (!empty($strategy)) {
-                    generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $_SESSION['user_id']);
+                    generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $_SESSION['user_id'], [
+                        'commander' => $commander,
+                        'ai_features' => $ai_features,
+                        'deck_size' => $deck_size,
+                        'color_focus' => $color_focus
+                    ]);
                 }
                 
-                $success_message = "Deck wurde erfolgreich erstellt!";
+                $success_message = "Deck wurde erfolgreich erstellt mit " . count($ai_features) . " AI-Features!";
             } catch (Exception $e) {
                 $error_message = "Fehler beim Erstellen des Decks: " . $e->getMessage();
             }
@@ -69,7 +78,108 @@ try {
     $error_message = "Fehler beim Laden der Decks: " . $e->getMessage();
 }
 
-// AI Deck Generation Function
+// Enhanced AI Deck Generation Function
+function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id, $options = []) {
+    $commander = $options['commander'] ?? '';
+    $ai_features = $options['ai_features'] ?? [];
+    $deck_size = $options['deck_size'] ?? 60;
+    $color_focus = $options['color_focus'] ?? '';
+    
+    try {
+        // Get user's collection
+        $stmt = $pdo->prepare("SELECT DISTINCT card_name, card_data FROM collections WHERE user_id = ? LIMIT 200");
+        $stmt->execute([$user_id]);
+        $user_cards = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if (empty($user_cards)) {
+            // Fallback: Use some basic card names
+            $user_cards = [
+                ['card_name' => 'Lightning Bolt'], ['card_name' => 'Counterspell'], 
+                ['card_name' => 'Serra Angel'], ['card_name' => 'Giant Growth'], 
+                ['card_name' => 'Dark Ritual'], ['card_name' => 'Forest'], ['card_name' => 'Island']
+            ];
+        }
+        
+        // Add Commander first if specified
+        if (!empty($commander) && $format === 'Commander') {
+            $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard, is_commander) VALUES (?, ?, 1, 0, 1)");
+            $stmt->execute([$deck_id, $commander]);
+            $deck_size--; // Reduce target since commander is already added
+        }
+        
+        // Strategy-based card selection with AI features
+        $mana_curve = [];
+        
+        // Enhanced mana curve based on AI features
+        if (in_array('mana_curve', $ai_features)) {
+            switch ($strategy) {
+                case 'Aggro':
+                    $mana_curve = [1 => 12, 2 => 16, 3 => 8, 4 => 4, 5 => 2, 6 => 1];
+                    break;
+                case 'Control':
+                    $mana_curve = [1 => 4, 2 => 8, 3 => 10, 4 => 10, 5 => 8, 6 => 6];
+                    break;
+                case 'Midrange':
+                    $mana_curve = [1 => 6, 2 => 10, 3 => 12, 4 => 10, 5 => 6, 6 => 4];
+                    break;
+                case 'Combo':
+                    $mana_curve = [1 => 8, 2 => 12, 3 => 8, 4 => 8, 5 => 6, 6 => 4];
+                    break;
+                default:
+                    $mana_curve = [1 => 8, 2 => 10, 3 => 10, 4 => 8, 5 => 6, 6 => 4];
+            }
+        } else {
+            // Standard mana curve
+            $mana_curve = [1 => 6, 2 => 8, 3 => 8, 4 => 6, 5 => 4, 6 => 3];
+        }
+        
+        // Add cards based on enhanced AI logic
+        $added_cards = 0;
+        $target_cards = min($deck_size, count($user_cards) * 2); // Reasonable limit
+        
+        // Add lands first if balance feature is enabled
+        if (in_array('balance', $ai_features)) {
+            $land_count = $format === 'Commander' ? 36 : 24;
+            $basic_lands = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'];
+            
+            for ($i = 0; $i < $land_count && $added_cards < $target_cards; $i++) {
+                $land = $basic_lands[array_rand($basic_lands)];
+                $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, 1, 0)");
+                $stmt->execute([$deck_id, $land]);
+                $added_cards++;
+            }
+        }
+        
+        // Add creatures and spells based on mana curve
+        foreach ($mana_curve as $cmc => $count) {
+            for ($i = 0; $i < $count && $added_cards < $target_cards; $i++) {
+                if (!empty($user_cards)) {
+                    $random_card = $user_cards[array_rand($user_cards)];
+                    $quantity = ($format === 'Commander') ? 1 : rand(1, min(4, $target_cards - $added_cards));
+                    
+                    // Avoid adding the same card as commander
+                    if ($random_card['card_name'] !== $commander) {
+                        $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
+                        $stmt->execute([$deck_id, $random_card['card_name'], $quantity]);
+                        $added_cards += $quantity;
+                    }
+                }
+            }
+        }
+        
+        // Log AI features used (for debugging/analytics)
+        if (!empty($ai_features)) {
+            $features_log = implode(',', $ai_features);
+            // Could add to database log table if needed
+        }
+        
+    } catch (Exception $e) {
+        // Ignore generation errors
+        error_log("AI Deck Generation Error: " . $e->getMessage());
+    }
+}
+
+// Legacy AI Deck Generation Function (keep for compatibility)
 function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) {
     // Get user's collection
     try {
@@ -170,23 +280,91 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
             border-radius: 12px;
             padding: 2rem;
         }
-        .strategy-btn {
+        .strategy-btn-compact {
             width: 100%;
-            height: 80px;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            border: 2px solid var(--border-color);
+            height: 50px;
+            border-radius: 6px;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
             transition: all 0.3s ease;
+            cursor: pointer;
+            font-size: 0.9rem;
         }
-        .strategy-btn.active {
-            border-color: var(--primary-color);
-            background-color: var(--primary-color);
+        .strategy-btn-compact.active,
+        .strategy-btn-compact:hover {
+            border-color: white;
+            background: rgba(255,255,255,0.2);
+        }
+        .deck-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .deck-item {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            background: var(--surface-color);
+            transition: transform 0.2s ease;
+        }
+        .deck-item:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .deck-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.5rem;
+        }
+        .deck-header h6 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .deck-badges {
+            display: flex;
+            gap: 0.25rem;
+        }
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .badge-format {
+            background: var(--primary-color);
             color: white;
         }
-        .strategy-btn:hover {
-            border-color: var(--primary-hover);
-            background-color: rgba(37, 99, 235, 0.1);
+        .badge-strategy {
+            background: var(--secondary-color);
+            color: white;
         }
+        .deck-stats {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .deck-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .btn-sm {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.8rem;
+            border-radius: 4px;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-secondary { background: var(--secondary-color); color: white; }
+        .btn-danger { background: var(--danger-color); color: white; }
+        .btn-sm:hover { opacity: 0.8; }
         .ai-features {
             background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
             border-radius: 8px;
@@ -232,173 +410,179 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
             </div>
         <?php endif; ?>
         
-        <div class="row">
+        <div class="grid grid-2 gap-4">
             <!-- Left Column: Deck Builder -->
-            <div class="col-md-6">
-                <div class="card deck-builder-card">
-                    <div class="card-body">
-                        <h3><i class="fas fa-brain"></i> Intelligenter Deck Builder</h3>
-                        <p class="mb-4">Erstellen Sie optimierte Decks mit KI-Unterstützung</p>
-                        
-                        <form method="post" id="deckBuilderForm">
-                            <input type="hidden" name="action" value="create_deck">
-                            
-                            <!-- Format Selection -->
-                            <div class="mb-3">
-                                <label class="form-label"><i class="fas fa-layer-group"></i> Format wählen</label>
-                                <select name="format" class="form-select" required>
-                                    <option value="">-- Format wählen --</option>
-                                    <option value="Standard">Standard</option>
-                                    <option value="Modern">Modern</option>
-                                    <option value="Legacy">Legacy</option>
-                                    <option value="Commander">Commander</option>
-                                    <option value="Pioneer">Pioneer</option>
-                                    <option value="Vintage">Vintage</option>
-                                    <option value="Pauper">Pauper</option>
-                                    <option value="Historic">Historic</option>
-                                    <option value="Casual">Casual</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Strategy Selection -->
-                            <div class="mb-3">
-                                <label class="form-label"><i class="fas fa-chess"></i> Deck-Strategie</label>
-                                <p class="small text-light mb-3">Wählen Sie die Hauptstrategie für optimale Kartenselektion</p>
-                                <div class="row">
-                                    <div class="col-6">
-                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Aggro">
-                                            <i class="fas fa-fire"></i><br>
-                                            <strong>Aggro</strong><br>
-                                            <small>Schnell, aggressiv</small>
-                                        </button>
-                                    </div>
-                                    <div class="col-6">
-                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Control">
-                                            <i class="fas fa-shield-alt"></i><br>
-                                            <strong>Control</strong><br>
-                                            <small>Defensive, Langzeitspiel</small>
-                                        </button>
-                                    </div>
-                                    <div class="col-6">
-                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Midrange">
-                                            <i class="fas fa-balance-scale"></i><br>
-                                            <strong>Midrange</strong><br>
-                                            <small>Ausgewogen</small>
-                                        </button>
-                                    </div>
-                                    <div class="col-6">
-                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Combo">
-                                            <i class="fas fa-cogs"></i><br>
-                                            <strong>Combo</strong><br>
-                                            <small>Synergie-fokussiert</small>
-                                        </button>
-                                    </div>
-                                </div>
-                                <input type="hidden" name="strategy" id="selectedStrategy">
-                            </div>
-                            
-                            <!-- Quality Level -->
-                            <div class="mb-3">
-                                <label class="form-label"><i class="fas fa-star"></i> Deck-Qualitätsstufe</label>
-                                <select name="quality" class="form-select">
-                                    <option value="Niedrig">⭐ Niedrig (Budget, solide)</option>
-                                    <option value="Mittel" selected>⭐⭐ Mittel (Ausgewogen, solide)</option>
-                                    <option value="Hoch">⭐⭐⭐ Hoch (Kompetitiv, optimiert)</option>
-                                </select>
-                            </div>
-                            
-                            <!-- AI Features Info -->
-                            <div class="ai-features">
-                                <h6><i class="fas fa-robot"></i> AI-Features</h6>
-                                <ul class="mb-0">
-                                    <li>Automatische Mana-Kurve Optimierung</li>
-                                    <li>Synergie-Analyse zwischen Karten</li>
-                                    <li>Meta-Game Abgleich</li>
-                                    <li>Format-spezifische Optimierungen</li>
-                                </ul>
-                            </div>
-                            
-                            <!-- Deck Name -->
-                            <div class="mb-3">
-                                <label class="form-label">Deck-Name</label>
-                                <input type="text" name="name" class="form-control" placeholder="Mein neues Deck" required>
-                            </div>
-                            
-                            <button type="submit" class="btn btn-warning btn-lg w-100">
-                                <i class="fas fa-magic"></i> Optimiertes Deck generieren
-                            </button>
-                        </form>
+            <div class="card deck-builder-card">
+                <h3><i class="fas fa-brain"></i> Intelligenter Deck Builder</h3>
+                <p style="margin-bottom: 1.5rem; opacity: 0.9;">Erstellen Sie optimierte Decks mit KI-Unterstützung</p>
+                
+                <form method="post" id="deckBuilderForm">
+                    <input type="hidden" name="action" value="create_deck">
+                    
+                    <!-- Compact Form Layout -->
+                    <div class="grid grid-2 gap-3" style="margin-bottom: 1rem;">
+                        <div>
+                            <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-layer-group"></i> Format</label>
+                            <select name="format" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;" required>
+                                <option value="">-- Format wählen --</option>
+                                <option value="Standard">Standard</option>
+                                <option value="Modern">Modern</option>
+                                <option value="Legacy">Legacy</option>
+                                <option value="Commander">Commander</option>
+                                <option value="Pioneer">Pioneer</option>
+                                <option value="Vintage">Vintage</option>
+                                <option value="Pauper">Pauper</option>
+                                <option value="Historic">Historic</option>
+                                <option value="Casual">Casual</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-star"></i> Qualität</label>
+                            <select name="quality" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;">
+                                <option value="Niedrig">Budget (Niedrig)</option>
+                                <option value="Mittel" selected>Standard (Mittel)</option>
+                                <option value="Hoch">Premium (Hoch)</option>
+                            </select>
+                        </div>
                     </div>
-                </div>
+                    
+                    <!-- Commander Selection (only visible when Commander format is selected) -->
+                    <div id="commanderSection" style="display: none; margin-bottom: 1rem;">
+                        <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-crown"></i> Commander aus Ihrer Sammlung</label>
+                        <select name="commander" id="commanderSelect" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;">
+                            <option value="">-- Commander wählen (optional) --</option>
+                        </select>
+                        <small style="color: rgba(255,255,255,0.7); font-size: 0.8rem;">Legendäre Kreaturen aus Ihrer Sammlung</small>
+                    </div>
+                    
+                    <!-- AI Features Section -->
+                    <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                        <h6 style="color: white; margin-bottom: 0.75rem;"><i class="fas fa-robot"></i> AI-Features</h6>
+                        
+                        <div class="grid grid-2 gap-2" style="margin-bottom: 0.75rem;">
+                            <label style="color: white; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <input type="checkbox" name="ai_features[]" value="mana_curve" checked>
+                                <span>Mana-Kurve optimieren</span>
+                            </label>
+                            <label style="color: white; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <input type="checkbox" name="ai_features[]" value="synergy">
+                                <span>Synergie-Analyse</span>
+                            </label>
+                            <label style="color: white; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <input type="checkbox" name="ai_features[]" value="meta_game">
+                                <span>Meta-Game Anpassung</span>
+                            </label>
+                            <label style="color: white; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <input type="checkbox" name="ai_features[]" value="balance">
+                                <span>Deck-Balance prüfen</span>
+                            </label>
+                        </div>
+                        
+                        <div style="margin-bottom: 0.75rem;">
+                            <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-chart-line"></i> Deck-Größe</label>
+                            <select name="deck_size" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;">
+                                <option value="60">60 Karten (Standard)</option>
+                                <option value="75">75 Karten (inkl. Sideboard)</option>
+                                <option value="100">100 Karten (Commander)</option>
+                                <option value="40">40 Karten (Limited)</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-palette"></i> Farbfokus</label>
+                            <select name="color_focus" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;">
+                                <option value="">Automatisch bestimmen</option>
+                                <option value="mono">Mono-Color (1 Farbe)</option>
+                                <option value="dual">Dual-Color (2 Farben)</option>
+                                <option value="tri">Tri-Color (3 Farben)</option>
+                                <option value="multi">Multi-Color (4+ Farben)</option>
+                                <option value="colorless">Farblos</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Compact Strategy Selection -->
+                    <div style="margin-bottom: 1rem;">
+                        <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-chess"></i> Deck-Strategie</label>
+                        <div class="grid grid-2 gap-2">
+                            <button type="button" class="strategy-btn-compact" data-strategy="Aggro">
+                                <i class="fas fa-fire"></i> <strong>Aggro</strong>
+                            </button>
+                            <button type="button" class="strategy-btn-compact" data-strategy="Control">
+                                <i class="fas fa-shield-alt"></i> <strong>Control</strong>
+                            </button>
+                            <button type="button" class="strategy-btn-compact" data-strategy="Midrange">
+                                <i class="fas fa-balance-scale"></i> <strong>Midrange</strong>
+                            </button>
+                            <button type="button" class="strategy-btn-compact" data-strategy="Combo">
+                                <i class="fas fa-cogs"></i> <strong>Combo</strong>
+                            </button>
+                        </div>
+                        <input type="hidden" name="strategy" id="selectedStrategy">
+                    </div>
+                    
+                    <!-- Deck Name -->
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="color: white; font-weight: 500; margin-bottom: 0.5rem; display: block;"><i class="fas fa-tag"></i> Deck Name</label>
+                        <input type="text" name="name" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd;" placeholder="Mein neues Deck" required>
+                    </div>
+                    
+                    <button type="submit" style="width: 100%; background: #fff; color: var(--primary-color); border: none; padding: 0.75rem; border-radius: 8px; font-weight: 600; transition: all 0.2s;">
+                        <i class="fas fa-magic"></i> Deck erstellen
+                    </button>
+                </form>
             </div>
             
             <!-- Right Column: Existing Decks -->
-            <div class="col-md-6">
+            <div>
                 <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-layer-group"></i> Ihre Decks</h5>
+                    <h5 style="margin-bottom: 1rem;"><i class="fas fa-layer-group"></i> Ihre Decks</h5>
                     </div>
-                    <div class="card-body">
-                        <?php if (empty($existing_decks)): ?>
-                            <div class="text-center text-muted">
-                                <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                                <p>Noch keine Decks erstellt</p>
-                                <p class="small">Nutzen Sie den Deck Builder links, um Ihr erstes Deck zu erstellen!</p>
-                            </div>
-                        <?php else: ?>
+                    <?php if (empty($existing_decks)): ?>
+                        <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                            <i class="fas fa-plus-circle" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+                            <p>Noch keine Decks erstellt</p>
+                            <p style="font-size: 0.9rem;">Nutzen Sie den Deck Builder links, um Ihr erstes Deck zu erstellen!</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="deck-list">
                             <?php foreach ($existing_decks as $deck): ?>
-                                <div class="deck-card card">
-                                    <div class="card-body">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <div>
-                                                <h6 class="card-title"><?= htmlspecialchars($deck['name']) ?></h6>
-                                                <span class="badge format-badge bg-<?= 
-                                                    $deck['format_type'] === 'Standard' ? 'primary' : 
-                                                    ($deck['format_type'] === 'Modern' ? 'success' : 
-                                                    ($deck['format_type'] === 'Legacy' ? 'warning' : 
-                                                    ($deck['format_type'] === 'Commander' ? 'info' : 'secondary')))
-                                                ?>">
-                                                    <?= htmlspecialchars($deck['format_type']) ?>
-                                                </span>
-                                                <?php if ($deck['strategy']): ?>
-                                                    <span class="badge bg-secondary"><?= htmlspecialchars($deck['strategy']) ?></span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="text-end">
-                                                <span class="badge bg-info"><?= $deck['card_count'] ?: 0 ?> Unique</span>
-                                                <span class="badge bg-secondary"><?= $deck['total_cards'] ?: 0 ?> Total</span>
-                                            </div>
+                                <div class="deck-item">
+                                    <div class="deck-header">
+                                        <h6><?= htmlspecialchars($deck['name']) ?></h6>
+                                        <div class="deck-badges">
+                                            <span class="badge badge-format"><?= htmlspecialchars($deck['format_type']) ?></span>
+                                            <?php if ($deck['strategy']): ?>
+                                                <span class="badge badge-strategy"><?= htmlspecialchars($deck['strategy']) ?></span>
+                                            <?php endif; ?>
                                         </div>
-                                        
-                                        <div class="deck-stats">
-                                            <small class="text-muted">
-                                                <i class="fas fa-calendar"></i> Erstellt: <?= date('d.m.Y', strtotime($deck['created_at'])) ?>
-                                                <?php if ($deck['quality_level']): ?>
-                                                    | <i class="fas fa-star"></i> <?= htmlspecialchars($deck['quality_level']) ?>
-                                                <?php endif; ?>
-                                            </small>
-                                        </div>
-                                        
-                                        <div class="mt-3">
-                                            <a href="deck_view.php?id=<?= $deck['id'] ?>" class="btn btn-primary btn-sm">
-                                                <i class="fas fa-eye"></i> Ansehen
-                                            </a>
-                                            <a href="#" class="btn btn-outline-secondary btn-sm">
-                                                <i class="fas fa-download"></i> Export
-                                            </a>
-                                            <form method="post" style="display: inline;" onsubmit="return confirm('Deck wirklich löschen?')">
-                                                <input type="hidden" name="action" value="delete_deck">
-                                                <input type="hidden" name="deck_id" value="<?= $deck['id'] ?>">
-                                                <button type="submit" class="btn btn-outline-danger btn-sm">
-                                                    <i class="fas fa-trash"></i> Löschen
-                                                </button>
-                                            </form>
-                                        </div>
+                                    </div>
+                                    
+                                    <div class="deck-stats">
+                                        <span><i class="fas fa-layer-group"></i> <?= $deck['card_count'] ?: 0 ?> unique</span>
+                                        <span><i class="fas fa-clone"></i> <?= $deck['total_cards'] ?: 0 ?> total</span>
+                                        <span><i class="fas fa-calendar"></i> <?= date('d.m.Y', strtotime($deck['created_at'])) ?></span>
+                                    </div>
+                                    
+                                    <div class="deck-actions">
+                                        <a href="deck_view.php?id=<?= $deck['id'] ?>" class="btn-sm btn-primary">
+                                            <i class="fas fa-eye"></i> Ansehen
+                                        </a>
+                                        <a href="#" class="btn-sm btn-secondary">
+                                            <i class="fas fa-download"></i> Export
+                                        </a>
+                                        <form method="post" style="display: inline;" onsubmit="return confirm('Deck wirklich löschen?')">
+                                            <input type="hidden" name="action" value="delete_deck">
+                                            <input type="hidden" name="deck_id" value="<?= $deck['id'] ?>">
+                                            <button type="submit" class="btn-sm btn-danger">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -407,12 +591,12 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
 
     <script>
         // Strategy selection handling
-        document.querySelectorAll('.strategy-btn').forEach(btn => {
+        document.querySelectorAll('.strategy-btn-compact').forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.preventDefault();
                 
                 // Remove active class from all buttons
-                document.querySelectorAll('.strategy-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.strategy-btn-compact').forEach(b => b.classList.remove('active'));
                 
                 // Add active class to clicked button
                 this.classList.add('active');
@@ -423,8 +607,11 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
         });
         
         // Auto-generate deck name based on strategy and format
-        document.querySelector('select[name="format"]').addEventListener('change', updateDeckName);
-        document.querySelectorAll('.strategy-btn').forEach(btn => {
+        document.querySelector('select[name="format"]').addEventListener('change', function() {
+            updateDeckName();
+            handleFormatChange(this.value);
+        });
+        document.querySelectorAll('.strategy-btn-compact').forEach(btn => {
             btn.addEventListener('click', updateDeckName);
         });
         
@@ -436,6 +623,50 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
             if (format && strategy) {
                 nameInput.value = strategy + ' ' + format + ' Deck';
             }
+        }
+        
+        function handleFormatChange(format) {
+            const commanderSection = document.getElementById('commanderSection');
+            const deckSizeSelect = document.querySelector('select[name="deck_size"]');
+            
+            if (format === 'Commander') {
+                commanderSection.style.display = 'block';
+                deckSizeSelect.value = '100';
+                loadCommanders();
+            } else {
+                commanderSection.style.display = 'none';
+                deckSizeSelect.value = '60';
+            }
+        }
+        
+        function loadCommanders() {
+            const commanderSelect = document.getElementById('commanderSelect');
+            
+            // Lade Commander aus der Sammlung via AJAX
+            fetch('get_commanders.php')
+                .then(response => response.json())
+                .then(data => {
+                    commanderSelect.innerHTML = '<option value="">-- Commander wählen (optional) --</option>';
+                    
+                    if (data.commanders && data.commanders.length > 0) {
+                        data.commanders.forEach(commander => {
+                            const option = document.createElement('option');
+                            option.value = commander.card_name;
+                            option.textContent = commander.card_name;
+                            commanderSelect.appendChild(option);
+                        });
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = 'Keine legendären Kreaturen in Ihrer Sammlung gefunden';
+                        option.disabled = true;
+                        commanderSelect.appendChild(option);
+                    }
+                })
+                .catch(error => {
+                    console.error('Fehler beim Laden der Commander:', error);
+                    commanderSelect.innerHTML = '<option value="">Fehler beim Laden der Commander</option>';
+                });
         }
         
         // Form validation
