@@ -87,6 +87,7 @@ function extractCardData($data) {
         'set' => $data['set'] ?? '',
         'set_name' => $data['set_name'] ?? '',
         'image_uris' => $data['image_uris'] ?? null,
+        'image_url' => isset($data['image_uris']['normal']) ? $data['image_uris']['normal'] : (isset($data['image_uris']['small']) ? $data['image_uris']['small'] : null), // Für Rückwärtskompatibilität
         'prices' => $data['prices'] ?? [],
         'manaCost' => $data['mana_cost'] ?? '', // Für Kompatibilität mit Commander detection
         'raw_data' => $data // Für debugging

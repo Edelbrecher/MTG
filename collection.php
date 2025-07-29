@@ -7,6 +7,29 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+// Hilfsfunktion um die richtige Bild-URL zu ermitteln
+function getCardImageUrl($card_data) {
+    // Direkte image_url (für ältere Karten)
+    if (isset($card_data['image_url']) && !empty($card_data['image_url'])) {
+        return $card_data['image_url'];
+    }
+    
+    // image_uris Objekt (für neuere Karten aus Scryfall API)
+    if (isset($card_data['image_uris']) && is_array($card_data['image_uris'])) {
+        // Bevorzuge normal, dann small, dann large als Fallback
+        if (isset($card_data['image_uris']['normal'])) {
+            return $card_data['image_uris']['normal'];
+        } elseif (isset($card_data['image_uris']['small'])) {
+            return $card_data['image_uris']['small'];
+        } elseif (isset($card_data['image_uris']['large'])) {
+            return $card_data['image_uris']['large'];
+        }
+    }
+    
+    // Fallback für Karten ohne Bild
+    return 'assets/images/card-back.jpg';
+}
+
 // Handle card actions (delete and update quantity)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'delete_card') {
@@ -908,7 +931,7 @@ $user = $stmt->fetch();
                          data-tribal="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'tribal') !== false ? 'true' : 'false'; ?>"
                          data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>">
                         <div class="mtg-card-border <?php echo $border_class; ?>"></div>
-                        <img src="<?php echo htmlspecialchars($card_data['image_url'] ?? 'assets/images/card-back.jpg'); ?>" 
+                        <img src="<?php echo htmlspecialchars(getCardImageUrl($card_data)); ?>" 
                              alt="<?php echo htmlspecialchars($card['card_name']); ?>" 
                              class="mtg-card-image">
                         <div class="mtg-card-content">
@@ -972,7 +995,7 @@ $user = $stmt->fetch();
                                 data-tribal="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'tribal') !== false ? 'true' : 'false'; ?>"
                                 data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>">
                                 <td>
-                                    <img src="<?php echo htmlspecialchars($card_data['image_url'] ?? 'assets/images/card-back.jpg'); ?>" 
+                                    <img src="<?php echo htmlspecialchars(getCardImageUrl($card_data)); ?>" 
                                          alt="<?php echo htmlspecialchars($card['card_name']); ?>" 
                                          class="card-image-small">
                                 </td>
@@ -1342,6 +1365,29 @@ $user = $stmt->fetch();
             }
         }
         
+        // Hilfsfunktion um die richtige Bild-URL in JavaScript zu ermitteln
+        function getCardImageUrl(cardData) {
+            // Direkte image_url (für ältere Karten)
+            if (cardData.image_url) {
+                return cardData.image_url;
+            }
+            
+            // image_uris Objekt (für neuere Karten aus Scryfall API)
+            if (cardData.image_uris && typeof cardData.image_uris === 'object') {
+                // Bevorzuge normal, dann small, dann large als Fallback
+                if (cardData.image_uris.normal) {
+                    return cardData.image_uris.normal;
+                } else if (cardData.image_uris.small) {
+                    return cardData.image_uris.small;
+                } else if (cardData.image_uris.large) {
+                    return cardData.image_uris.large;
+                }
+            }
+            
+            // Fallback für Karten ohne Bild
+            return 'assets/images/card-back.jpg';
+        }
+        
         // Karten-Detail-Modal Funktionalität
         function openCardModal(cardElement) {
             const cardId = cardElement.dataset.cardId;
@@ -1381,7 +1427,7 @@ $user = $stmt->fetch();
                 </div>
                 <div class="card-modal-body">
                     <div>
-                        <img src="${parsedCardData.image_url || 'assets/images/card-back.jpg'}" 
+                        <img src="${getCardImageUrl(parsedCardData)}" 
                              alt="${fullCardData.card_name}" 
                              class="card-modal-image">
                     </div>
