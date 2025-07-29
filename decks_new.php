@@ -168,8 +168,7 @@ function isCardLegalInCommander($card_data, $commander_colors) {
     }
     
     return true;
-}
-
+<?php
 // Enhanced AI Deck Generation Function with intelligent monitoring
 function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id, $options = [], &$ai_log = []) {
     $commander = $options['commander'] ?? '';
@@ -191,7 +190,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         
         if (empty($user_cards)) {
             $ai_log[] = "⚠️ Sammlung leer - verwende Fallback-Karten";
-            // Fallback: Use some basic card names
             $user_cards = [
                 ['card_name' => 'Lightning Bolt'], ['card_name' => 'Counterspell'], 
                 ['card_name' => 'Serra Angel'], ['card_name' => 'Giant Growth'], 
@@ -230,8 +228,7 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         if (in_array('mana_curve', $ai_features)) {
             $ai_log[] = "⚡ Optimiere Mana-Kurve für {$strategy}-Strategie...";
             
-            // Angepasste Mana-Kurven für verschiedene Deck-Größen
-            $curve_multiplier = $actual_deck_size / 60; // Skaliere basierend auf Deck-Größe
+            $curve_multiplier = $actual_deck_size / 60;
             
             switch ($strategy) {
                 case 'Aggro':
@@ -255,12 +252,10 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                     $ai_log[] = "📈 Standard-Kurve angewendet";
             }
             
-            // Skaliere die Kurve für die Deck-Größe
             foreach ($base_curve as $cmc => $count) {
                 $mana_curve[$cmc] = round($count * $curve_multiplier);
             }
             
-            // Berechne Mana-Kurven-Statistiken
             $total_curve_cards = array_sum($mana_curve);
             $avg_cmc = 0;
             $weighted_sum = 0;
@@ -280,7 +275,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             $ai_log[] = "📊 Durchschnittliche Mana-Kosten: {$avg_cmc}";
             
         } else {
-            // Standard mana curve - auch skaliert
             $curve_multiplier = $actual_deck_size / 60;
             $base_curve = [1 => 6, 2 => 8, 3 => 8, 4 => 6, 5 => 4, 6 => 3];
             foreach ($base_curve as $cmc => $count) {
@@ -294,23 +288,21 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         if (in_array('balance', $ai_features)) {
             $ai_log[] = "⚖️ Berechne optimale Land-Verteilung...";
             if ($format === 'Commander') {
-                $land_count = 36; // Standard für Commander
+                $land_count = 36;
             } else {
-                $land_count = round($actual_deck_size * 0.4); // 40% Länder
+                $land_count = round($actual_deck_size * 0.4);
             }
             $ai_log[] = "🏞️ {$land_count} Länder geplant";
         }
         
-        // Berechne verfügbare Slots für Nicht-Land-Karten
         $non_land_slots = $actual_deck_size - $land_count;
-        $spell_target = min($non_land_slots, count($user_cards) * 2); // Begrenze auf verfügbare Karten
-        
+        $spell_target = min($non_land_slots, count($user_cards) * 2);
         $added_cards = 0;
         
         // Add lands first if balance feature is enabled
         if (in_array('balance', $ai_features) && $land_count > 0) {
             $ai_log[] = "🏞️ Füge Länder hinzu...";
-            // For Commander, only add basic lands that match color identity
+            
             if ($format === 'Commander' && !empty($commander_colors)) {
                 $available_basics = [];
                 if (in_array('W', $commander_colors)) $available_basics[] = 'Plains';
@@ -319,11 +311,9 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                 if (in_array('R', $commander_colors)) $available_basics[] = 'Mountain';
                 if (in_array('G', $commander_colors)) $available_basics[] = 'Forest';
                 
-                // If no colors (colorless commander), add all basics
                 if (empty($available_basics)) {
                     $available_basics = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
                 }
-                
                 $basic_lands = $available_basics;
             } else {
                 $basic_lands = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'];
@@ -343,19 +333,17 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             for ($i = 0; $i < $count && $added_cards < $spell_target; $i++) {
                 if (!empty($user_cards)) {
                     $attempts = 0;
-                    $max_attempts = count($user_cards) * 2; // Verhindere Endlosschleife
+                    $max_attempts = count($user_cards) * 2;
                     
                     do {
                         $random_card = $user_cards[array_rand($user_cards)];
                         $attempts++;
                         
-                        // Prüfe Commander Color Identity für Commander-Format
                         $is_legal = true;
                         if ($format === 'Commander' && !empty($commander_colors)) {
                             $is_legal = isCardLegalInCommander($random_card['card_data'] ?? null, $commander_colors);
                         }
                         
-                        // Prüfe Mana-Kosten-Übereinstimmung
                         $card_cmc = extractManaValue($random_card['card_data'] ?? null);
                         $cmc_matches = ($card_cmc == $cmc || $cmc >= 6 && $card_cmc >= 6);
                         
@@ -374,7 +362,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         
         // Intelligent deck analysis and warnings
         if (in_array('mana_curve', $ai_features)) {
-            // Analysiere die finale Mana-Kurve
             $curve_problems = [];
             
             if ($mana_curve_analysis['avg_cmc'] > 4.0) {
@@ -387,7 +374,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                 $warnings[] = "Deck könnte zu schnell ausgehen (Avg CMC: " . $mana_curve_analysis['avg_cmc'] . ")";
             }
             
-            // Prüfe auf unausgewogene Kurve
             $curve_dist = $mana_curve_analysis['curve_distribution'];
             $low_cost = ($curve_dist[1] ?? 0) + ($curve_dist[2] ?? 0);
             $total_spells = $mana_curve_analysis['total_spells'];
@@ -401,40 +387,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             } else {
                 $ai_log[] = "⚠️ Mana-Kurven-Analyse: " . implode(', ', $curve_problems);
             }
-        }
-        $ai_log[] = "✅ {$added_cards} Zauber hinzugefügt";
-        
-        // Intelligent deck analysis and warnings
-        if (in_array('mana_curve', $ai_features)) {
-            // Analysiere die finale Mana-Kurve
-            $curve_problems = [];
-            
-            if ($mana_curve_analysis['avg_cmc'] > 4.0) {
-                $curve_problems[] = "Hohe durchschnittliche Mana-Kosten";
-                $warnings[] = "Deck könnte zu langsam sein (Avg CMC: " . $mana_curve_analysis['avg_cmc'] . ")";
-            }
-            
-            if ($mana_curve_analysis['avg_cmc'] < 2.0) {
-                $curve_problems[] = "Sehr niedrige Mana-Kosten";
-                $warnings[] = "Deck könnte zu schnell ausgehen (Avg CMC: " . $mana_curve_analysis['avg_cmc'] . ")";
-            }
-            
-            // Prüfe auf unausgewogene Kurve
-            $curve_dist = $mana_curve_analysis['curve_distribution'];
-            $low_cost = ($curve_dist[1] ?? 0) + ($curve_dist[2] ?? 0);
-            $total_spells = $mana_curve_analysis['total_spells'];
-            
-            if ($total_spells > 0 && $low_cost / $total_spells < 0.3) {
-                $warnings[] = "Wenig Early Game Optionen (nur " . round($low_cost / $total_spells * 100) . "% CMC 1-2)";
-            }
-            
-            if (empty($curve_problems)) {
-                $ai_log[] = "✅ Mana-Kurve optimal";
-            } else {
-                $ai_log[] = "⚠️ Mana-Kurven-Analyse: " . implode(', ', $curve_problems);
-            }
-        }
-                }
         }
         
         // Fill remaining slots if needed
@@ -450,7 +402,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                 if (!empty($user_cards)) {
                     $random_card = $user_cards[array_rand($user_cards)];
                     
-                    // Prüfe Commander Color Identity für Commander-Format
                     $is_legal = true;
                     if ($format === 'Commander' && !empty($commander_colors)) {
                         $is_legal = isCardLegalInCommander($random_card['card_data'] ?? null, $commander_colors);
@@ -460,13 +411,13 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                         $quantity = ($format === 'Commander') ? 1 : min(4, $remaining_slots - $i);
                         $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
                         $stmt->execute([$deck_id, $random_card['card_name'], $quantity]);
-                        $i += $quantity; // Adjust counter for quantity
+                        $i += $quantity;
                     }
                 }
             }
         }
         
-        // Log AI features used (for debugging/analytics)
+        // Log AI features used
         if (!empty($ai_features)) {
             $features_log = implode(',', $ai_features);
             $ai_log[] = "🤖 AI-Features verwendet: " . $features_log;
@@ -476,7 +427,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         $final_count = $added_cards + $land_count + ($format === 'Commander' ? 1 : 0);
         $ai_log[] = "📈 Finales Deck: {$final_count} Karten";
         
-        // Return result with analysis
         return [
             'success' => true,
             'cards_added' => $added_cards,
@@ -488,7 +438,6 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         ];
         
     } catch (Exception $e) {
-        // Ignore generation errors but log them
         error_log("AI Deck Generation Error: " . $e->getMessage());
         $ai_log[] = "❌ Fehler: " . $e->getMessage();
         
@@ -498,6 +447,90 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             'ai_steps' => $ai_log
         ];
     }
+}
+
+// Helper function to get commander color identity
+function getCommanderColorIdentity($pdo, $commander_name, $user_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT card_data FROM collections WHERE user_id = ? AND card_name = ? LIMIT 1");
+        $stmt->execute([$user_id, $commander_name]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result && !empty($result['card_data'])) {
+            $card_data = json_decode($result['card_data'], true);
+            if (isset($card_data['colorIdentity'])) {
+                return $card_data['colorIdentity'];
+            }
+        }
+        
+        return [];
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+// Helper function to check if card is legal in Commander format
+function isCardLegalInCommander($card_data, $commander_colors) {
+    if (empty($card_data) || empty($commander_colors)) {
+        return true;
+    }
+    
+    try {
+        $data = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+        
+        if (isset($data['colorIdentity'])) {
+            $card_colors = $data['colorIdentity'];
+            
+            foreach ($card_colors as $color) {
+                if (!in_array($color, $commander_colors)) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    } catch (Exception $e) {
+        return true;
+    }
+}
+
+// Helper function to extract mana value from card data
+function extractManaValue($card_data) {
+    if (empty($card_data)) {
+        return 0;
+    }
+    
+    try {
+        $data = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+        
+        if (isset($data['manaValue'])) {
+            return (int)$data['manaValue'];
+        }
+        
+        if (isset($data['cmc'])) {
+            return (int)$data['cmc'];
+        }
+        
+        if (isset($data['manaCost'])) {
+            $mana_cost = $data['manaCost'];
+            preg_match_all('/\{(\d+)\}/', $mana_cost, $numbers);
+            preg_match_all('/\{[WUBRG]\}/', $mana_cost, $colors);
+            
+            $total = 0;
+            foreach ($numbers[1] as $num) {
+                $total += (int)$num;
+            }
+            $total += count($colors[0]);
+            
+            return $total;
+        }
+        
+        return 0;
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+?>
 }
 
 // Helper function to get commander color identity
