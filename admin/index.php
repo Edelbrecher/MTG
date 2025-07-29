@@ -36,14 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 $stmt = $pdo->query("SELECT COUNT(*) FROM users");
 $total_users = $stmt->fetchColumn();
 
-$stmt = $pdo->query("SELECT COUNT(*) FROM collections");
-$total_cards = $stmt->fetchColumn();
+$stmt = $pdo->query("SELECT COUNT(DISTINCT card_name) FROM collections");
+$unique_cards = $stmt->fetchColumn();
 
 $stmt = $pdo->query("SELECT COUNT(*) FROM decks");
 $total_decks = $stmt->fetchColumn();
 
 $stmt = $pdo->query("SELECT SUM(quantity) FROM collections");
-$total_quantity = $stmt->fetchColumn() ?: 0;
+$total_cards = $stmt->fetchColumn() ?: 0;
 
 // Get all users
 $stmt = $pdo->query("
@@ -74,204 +74,195 @@ $stmt = $pdo->query("
 $recent_activity = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - MTG Collection Manager</title>
-    <link rel="stylesheet" href="../assets/css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+        .activity-item {
+            border-left: 4px solid #007bff;
+            padding-left: 15px;
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 <body>
     <?php include '../includes/navbar.php'; ?>
     
-    <div class="container">
-        <div class="main-content">
-            <div class="page-header">
-                <h1 class="page-title">Admin Dashboard</h1>
-                <p class="page-subtitle">Systemverwaltung und Benutzerübersicht</p>
-            </div>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1><i class="fas fa-user-shield"></i> Admin Dashboard</h1>
+                
+                <?php if (isset($message)): ?>
+                    <div class="alert alert-success"><?= $message ?></div>
+                <?php endif; ?>
+                <?php if (isset($error)): ?>
+                    <div class="alert alert-danger"><?= $error ?></div>
+                <?php endif; ?>
+                
+                <!-- Statistics Cards -->
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-users fa-2x mb-3"></i>
+                                <div class="stat-value"><?= $total_users ?></div>
+                                <div>Total Users</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-layer-group fa-2x mb-3"></i>
+                                <div class="stat-value"><?= $total_decks ?></div>
+                                <div>Total Decks</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-magic fa-2x mb-3"></i>
+                                <div class="stat-value"><?= $unique_cards ?></div>
+                                <div>Unique Cards</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-database fa-2x mb-3"></i>
+                                <div class="stat-value"><?= number_format($total_cards) ?></div>
+                                <div>Total Cards</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-            <?php if (isset($message)): ?>
-                <div class="card mb-3" style="background: var(--success-color); color: white;">
-                    <div class="card-body"><?php echo htmlspecialchars($message); ?></div>
-                </div>
-            <?php endif; ?>
+                <!-- Recent Activity and Users -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-clock"></i> Recent Activity</h5>
+                            </div>
+                            <div class="card-body">
+                                <?php foreach ($recent_activity as $activity): ?>
+                                    <div class="activity-item">
+                                        <strong><?= htmlspecialchars($activity['username']) ?></strong>
+                                        <?php if ($activity['activity_type'] === 'card_added'): ?>
+                                            added <em><?= htmlspecialchars($activity['item_name']) ?></em> to collection
+                                        <?php else: ?>
+                                            created deck <em><?= htmlspecialchars($activity['item_name']) ?></em>
+                                        <?php endif; ?>
+                                        <small class="text-muted d-block"><?= date('M j, Y g:i A', strtotime($activity['activity_date'])) ?></small>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
 
-            <?php if (isset($error)): ?>
-                <div class="card mb-3" style="background: var(--danger-color); color: white;">
-                    <div class="card-body"><?php echo htmlspecialchars($error); ?></div>
-                </div>
-            <?php endif; ?>
-
-            <!-- System Statistics -->
-            <div class="grid grid-4 mb-4">
-                <div class="card">
-                    <div class="card-body text-center">
-                        <h3 style="color: var(--primary-color); font-size: 2rem; margin-bottom: 0.5rem;"><?php echo $total_users; ?></h3>
-                        <p>Registrierte Benutzer</p>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-body text-center">
-                        <h3 style="color: var(--success-color); font-size: 2rem; margin-bottom: 0.5rem;"><?php echo $total_cards; ?></h3>
-                        <p>Verschiedene Karten</p>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-body text-center">
-                        <h3 style="color: var(--warning-color); font-size: 2rem; margin-bottom: 0.5rem;"><?php echo $total_quantity; ?></h3>
-                        <p>Karten insgesamt</p>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-body text-center">
-                        <h3 style="color: var(--secondary-color); font-size: 2rem; margin-bottom: 0.5rem;"><?php echo $total_decks; ?></h3>
-                        <p>Erstellte Decks</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-2 gap-4">
-                <!-- Users Management -->
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Benutzerverwaltung</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table style="width: 100%; border-collapse: collapse;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border-color);">
-                                        <th style="padding: 0.5rem; text-align: left;">Benutzer</th>
-                                        <th style="padding: 0.5rem; text-align: center;">Karten</th>
-                                        <th style="padding: 0.5rem; text-align: center;">Decks</th>
-                                        <th style="padding: 0.5rem; text-align: center;">Admin</th>
-                                        <th style="padding: 0.5rem; text-align: center;">Aktionen</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($users as $user): ?>
-                                        <tr style="border-bottom: 1px solid var(--border-color);">
-                                            <td style="padding: 0.5rem;">
-                                                <div>
-                                                    <strong><?php echo htmlspecialchars($user['username']); ?></strong>
-                                                    <div style="font-size: 0.75rem; color: var(--text-muted);">
-                                                        <?php echo htmlspecialchars($user['email']); ?>
-                                                    </div>
-                                                    <div style="font-size: 0.75rem; color: var(--text-muted);">
-                                                        Seit: <?php echo date('d.m.Y', strtotime($user['created_at'])); ?>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td style="padding: 0.5rem; text-align: center;">
-                                                <?php echo $user['card_count'] ?: 0; ?> 
-                                                <small>(<?php echo $user['total_quantity'] ?: 0; ?>)</small>
-                                            </td>
-                                            <td style="padding: 0.5rem; text-align: center;">
-                                                <?php echo $user['deck_count'] ?: 0; ?>
-                                            </td>
-                                            <td style="padding: 0.5rem; text-align: center;">
-                                                <?php if ($user['is_admin']): ?>
-                                                    <span style="color: var(--success-color);">✓</span>
-                                                <?php else: ?>
-                                                    <span style="color: var(--text-muted);">-</span>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-users"></i> User Overview</h5>
+                            </div>
+                            <div class="card-body">
+                                <?php foreach ($users as $user): ?>
+                                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                                        <div>
+                                            <strong><?= htmlspecialchars($user['username']) ?></strong>
+                                            <?php if ($user['is_admin']): ?>
+                                                <span class="badge bg-warning">Admin</span>
+                                            <?php endif; ?>
+                                            <br><small class="text-muted"><?= htmlspecialchars($user['email']) ?></small>
+                                        </div>
+                                        <div class="text-end">
+                                            <span class="badge bg-primary"><?= $user['card_count'] ?> cards</span>
+                                            <span class="badge bg-success"><?= $user['deck_count'] ?> decks</span>
+                                            <div class="btn-group btn-group-sm mt-1">
+                                                <form method="post" style="display: inline;">
+                                                    <input type="hidden" name="action" value="toggle_admin">
+                                                    <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
+                                                    <button type="submit" class="btn btn-outline-warning btn-sm" title="Toggle Admin">
+                                                        <i class="fas fa-user-shield"></i>
+                                                    </button>
+                                                </form>
+                                                <?php if ($user['id'] !== $_SESSION['user_id']): ?>
+                                                <form method="post" style="display: inline;" onsubmit="return confirm('Benutzer wirklich löschen?')">
+                                                    <input type="hidden" name="action" value="delete_user">
+                                                    <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete User">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </form>
                                                 <?php endif; ?>
-                                            </td>
-                                            <td style="padding: 0.5rem; text-align: center;">
-                                                <div style="display: flex; gap: 0.25rem; justify-content: center;">
-                                                    <form method="POST" style="display: inline;">
-                                                        <input type="hidden" name="action" value="toggle_admin">
-                                                        <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                                        <button type="submit" class="btn btn-secondary" 
-                                                                style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
-                                                            <?php echo $user['is_admin'] ? 'Admin ↓' : 'Admin ↑'; ?>
-                                                        </button>
-                                                    </form>
-                                                    
-                                                    <?php if ($user['id'] !== $_SESSION['user_id']): ?>
-                                                        <form method="POST" style="display: inline;">
-                                                            <input type="hidden" name="action" value="delete_user">
-                                                            <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                                            <button type="submit" class="btn btn-danger" 
-                                                                    style="padding: 0.25rem 0.5rem; font-size: 0.75rem;"
-                                                                    onclick="return confirm('Benutzer wirklich löschen?')">
-                                                                🗑
-                                                            </button>
-                                                        </form>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Recent Activity -->
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Letzte Aktivitäten</h3>
-                    </div>
-                    <div class="card-body">
-                        <?php foreach ($recent_activity as $activity): ?>
-                            <div class="flex justify-between items-center mb-2 p-2" 
-                                 style="border-bottom: 1px solid var(--border-color);">
-                                <div>
-                                    <strong><?php echo htmlspecialchars($activity['username']); ?></strong>
-                                    <?php if ($activity['activity_type'] === 'card_added'): ?>
-                                        hat Karte "<em><?php echo htmlspecialchars($activity['item_name']); ?></em>" hinzugefügt
-                                    <?php else: ?>
-                                        hat Deck "<em><?php echo htmlspecialchars($activity['item_name']); ?></em>" erstellt
-                                    <?php endif; ?>
-                                </div>
-                                <small class="text-muted">
-                                    <?php echo date('d.m. H:i', strtotime($activity['activity_date'])); ?>
-                                </small>
+                <!-- Admin Tools -->
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-tools"></i> Database Tools</h5>
                             </div>
-                        <?php endforeach; ?>
-                        
-                        <?php if (empty($recent_activity)): ?>
-                            <p class="text-muted">Keine Aktivitäten gefunden.</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-
-            <!-- System Tools -->
-            <div class="card mt-4">
-                <div class="card-header">
-                    <h3>System-Tools</h3>
-                </div>
-                <div class="card-body">
-                    <div class="grid grid-3 gap-4">
-                        <div>
-                            <h4 class="mb-2">Datenbank bereinigen</h4>
-                            <p class="text-muted mb-3">Entfernt verwaiste Datensätze und optimiert die Datenbank.</p>
-                            <form method="POST" style="display: inline;">
-                                <input type="hidden" name="action" value="cleanup_database">
-                                <button type="submit" class="btn btn-secondary">Datenbank bereinigen</button>
-                            </form>
-                        </div>
-                        
-                        <div>
-                            <h4 class="mb-2">System-Info</h4>
-                            <div style="font-size: 0.875rem;">
-                                <div><strong>PHP:</strong> <?php echo PHP_VERSION; ?></div>
-                                <div><strong>Server:</strong> <?php echo $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'; ?></div>
-                                <div><strong>MySQL:</strong> <?php echo $pdo->getAttribute(PDO::ATTR_SERVER_VERSION); ?></div>
+                            <div class="card-body">
+                                <a href="../sync_quantities.php" class="btn btn-warning me-2 mb-2">
+                                    <i class="fas fa-sync"></i> Sync Quantities
+                                </a>
+                                <a href="../merge_duplicates.php" class="btn btn-info me-2 mb-2">
+                                    <i class="fas fa-clone"></i> Merge Duplicates
+                                </a>
+                                <a href="../remove_test_cards.php" class="btn btn-secondary me-2 mb-2">
+                                    <i class="fas fa-trash"></i> Remove Test Cards
+                                </a>
+                                <a href="../bulk_import.php" class="btn btn-primary me-2 mb-2">
+                                    <i class="fas fa-upload"></i> Bulk Import
+                                </a>
+                                <form method="post" style="display: inline;" onsubmit="return confirm('Datenbank wirklich bereinigen?')">
+                                    <input type="hidden" name="action" value="cleanup_database">
+                                    <button type="submit" class="btn btn-danger me-2 mb-2">
+                                        <i class="fas fa-broom"></i> Cleanup Database
+                                    </button>
+                                </form>
                             </div>
                         </div>
-                        
-                        <div>
-                            <h4 class="mb-2">Backup erstellen</h4>
-                            <p class="text-muted mb-3">Erstellt ein vollständiges Backup der Datenbank.</p>
-                            <button type="button" class="btn btn-secondary" 
-                                    onclick="alert('Backup-Funktion wird in einer zukünftigen Version verfügbar sein.')">
-                                Backup erstellen
-                            </button>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-info-circle"></i> System Info</h5>
+                            </div>
+                            <div class="card-body">
+                                <p><strong>PHP Version:</strong> <?= phpversion() ?></p>
+                                <p><strong>MySQL Version:</strong> <?= $pdo->query('SELECT VERSION()')->fetchColumn() ?></p>
+                                <p><strong>Server:</strong> <?= $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown' ?></p>
+                                <p><strong>Users:</strong> <?= count($users) ?></p>
+                                <p><strong>Document Root:</strong> <?= $_SERVER['DOCUMENT_ROOT'] ?></p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -279,6 +270,6 @@ $recent_activity = $stmt->fetchAll();
         </div>
     </div>
 
-    <?php include '../includes/footer.php'; ?>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

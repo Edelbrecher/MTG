@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MTG Deck Builder - Einfache Version</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .deck-builder-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            padding: 30px;
+        }
+        .strategy-btn {
+            width: 100%;
+            height: 80px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .strategy-btn.active {
+            border-color: #ffd700;
+            background-color: #667eea;
+            color: white;
+        }
+        .strategy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .ai-features {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#"><i class="fas fa-magic"></i> MTG Collection Manager</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="index.php">Dashboard</a>
+                <a class="nav-link" href="collection.php">Sammlung</a>
+                <a class="nav-link active" href="#">Decks</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container mt-4">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> <strong>Statische Demo-Version</strong> - Funktioniert ohne Datenbank!
+        </div>
+        
+        <div class="row">
+            <!-- Left Column: Deck Builder -->
+            <div class="col-md-6">
+                <div class="card deck-builder-card">
+                    <div class="card-body">
+                        <h3><i class="fas fa-brain"></i> Intelligenter Deck Builder</h3>
+                        <p class="mb-4">Erstellen Sie optimierte Decks mit KI-Unterstützung</p>
+                        
+                        <form id="deckBuilderForm">
+                            <!-- Format Selection -->
+                            <div class="mb-3">
+                                <label class="form-label"><i class="fas fa-layer-group"></i> Format wählen</label>
+                                <select name="format" class="form-select" required>
+                                    <option value="">-- Format wählen --</option>
+                                    <option value="Standard">Standard</option>
+                                    <option value="Modern">Modern</option>
+                                    <option value="Legacy">Legacy</option>
+                                    <option value="Commander">Commander</option>
+                                    <option value="Pioneer">Pioneer</option>
+                                    <option value="Vintage">Vintage</option>
+                                    <option value="Pauper">Pauper</option>
+                                    <option value="Historic">Historic</option>
+                                    <option value="Casual">Casual</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Strategy Selection -->
+                            <div class="mb-3">
+                                <label class="form-label"><i class="fas fa-chess"></i> Deck-Strategie</label>
+                                <p class="small text-light mb-3">Wählen Sie die Hauptstrategie für optimale Kartenselektion</p>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Aggro">
+                                            <i class="fas fa-fire"></i><br>
+                                            <strong>Aggro</strong><br>
+                                            <small>Schnell, aggressiv</small>
+                                        </button>
+                                    </div>
+                                    <div class="col-6">
+                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Control">
+                                            <i class="fas fa-shield-alt"></i><br>
+                                            <strong>Control</strong><br>
+                                            <small>Defensive, Langzeitspiel</small>
+                                        </button>
+                                    </div>
+                                    <div class="col-6">
+                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Midrange">
+                                            <i class="fas fa-balance-scale"></i><br>
+                                            <strong>Midrange</strong><br>
+                                            <small>Ausgewogen</small>
+                                        </button>
+                                    </div>
+                                    <div class="col-6">
+                                        <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Combo">
+                                            <i class="fas fa-cogs"></i><br>
+                                            <strong>Combo</strong><br>
+                                            <small>Synergie-fokussiert</small>
+                                        </button>
+                                    </div>
+                                </div>
+                                <input type="hidden" name="strategy" id="selectedStrategy">
+                            </div>
+                            
+                            <!-- Quality Level -->
+                            <div class="mb-3">
+                                <label class="form-label"><i class="fas fa-star"></i> Deck-Qualitätsstufe</label>
+                                <select name="quality" class="form-select">
+                                    <option value="Niedrig">⭐ Niedrig (Budget, solide)</option>
+                                    <option value="Mittel" selected>⭐⭐ Mittel (Ausgewogen, solide)</option>
+                                    <option value="Hoch">⭐⭐⭐ Hoch (Kompetitiv, optimiert)</option>
+                                </select>
+                            </div>
+                            
+                            <!-- AI Features Info -->
+                            <div class="ai-features">
+                                <h6><i class="fas fa-robot"></i> AI-Features</h6>
+                                <ul class="mb-0">
+                                    <li>Automatische Mana-Kurve Optimierung</li>
+                                    <li>Synergie-Analyse zwischen Karten</li>
+                                    <li>Meta-Game Abgleich</li>
+                                    <li>Format-spezifische Optimierungen</li>
+                                </ul>
+                            </div>
+                            
+                            <!-- Deck Name -->
+                            <div class="mb-3">
+                                <label class="form-label">Deck-Name</label>
+                                <input type="text" name="name" class="form-control" placeholder="Mein neues Deck" required>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-warning btn-lg w-100">
+                                <i class="fas fa-magic"></i> Optimiertes Deck generieren
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column: Demo Decks -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-layer-group"></i> Demo Decks</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Demo Deck 1 -->
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="card-title">Aggro Lightning Deck</h6>
+                                        <span class="badge bg-primary">Standard</span>
+                                        <span class="badge bg-secondary">Aggro</span>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge bg-info">36 Unique</span>
+                                        <span class="badge bg-secondary">60 Total</span>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar"></i> Erstellt: 27.07.2025 | 
+                                        <i class="fas fa-star"></i> Hoch
+                                    </small>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-primary btn-sm">
+                                        <i class="fas fa-eye"></i> Ansehen
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm">
+                                        <i class="fas fa-download"></i> Export
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Demo Deck 2 -->
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="card-title">Control Blue-White</h6>
+                                        <span class="badge bg-success">Modern</span>
+                                        <span class="badge bg-secondary">Control</span>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge bg-info">42 Unique</span>
+                                        <span class="badge bg-secondary">60 Total</span>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar"></i> Erstellt: 26.07.2025 | 
+                                        <i class="fas fa-star"></i> Mittel
+                                    </small>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-primary btn-sm">
+                                        <i class="fas fa-eye"></i> Ansehen
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm">
+                                        <i class="fas fa-download"></i> Export
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Demo Deck 3 -->
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="card-title">Commander Tribal Dragons</h6>
+                                        <span class="badge bg-info">Commander</span>
+                                        <span class="badge bg-secondary">Midrange</span>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge bg-info">98 Unique</span>
+                                        <span class="badge bg-secondary">100 Total</span>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar"></i> Erstellt: 25.07.2025 | 
+                                        <i class="fas fa-star"></i> Hoch
+                                    </small>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-primary btn-sm">
+                                        <i class="fas fa-eye"></i> Ansehen
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm">
+                                        <i class="fas fa-download"></i> Export
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center text-muted mt-4">
+                            <p><i class="fas fa-info-circle"></i> Demo-Daten - In der echten Version sehen Sie hier Ihre eigenen Decks!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Strategy selection handling
+        document.querySelectorAll('.strategy-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Remove active class from all buttons
+                document.querySelectorAll('.strategy-btn').forEach(b => b.classList.remove('active'));
+                
+                // Add active class to clicked button
+                this.classList.add('active');
+                
+                // Set hidden input value
+                document.getElementById('selectedStrategy').value = this.dataset.strategy;
+            });
+        });
+        
+        // Auto-generate deck name based on strategy and format
+        document.querySelector('select[name="format"]').addEventListener('change', updateDeckName);
+        document.querySelectorAll('.strategy-btn').forEach(btn => {
+            btn.addEventListener('click', updateDeckName);
+        });
+        
+        function updateDeckName() {
+            const format = document.querySelector('select[name="format"]').value;
+            const strategy = document.getElementById('selectedStrategy').value;
+            const nameInput = document.querySelector('input[name="name"]');
+            
+            if (format && strategy) {
+                nameInput.value = strategy + ' ' + format + ' Deck';
+            }
+        }
+        
+        // Form submission demo
+        document.getElementById('deckBuilderForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const format = document.querySelector('select[name="format"]').value;
+            const strategy = document.getElementById('selectedStrategy').value;
+            const name = document.querySelector('input[name="name"]').value;
+            
+            if (!format || !strategy || !name) {
+                alert('Bitte füllen Sie alle Felder aus!');
+                return;
+            }
+            
+            alert('Demo: Deck "' + name + '" (' + strategy + ' ' + format + ') würde erstellt werden!');
+        });
+    </script>
+</body>
+</html>

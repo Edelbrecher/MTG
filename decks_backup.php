@@ -7,9 +7,6 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$success_message = '';
-$error_message = '';
-
 // Handle deck creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'create_deck') {
@@ -19,226 +16,177 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $quality = $_POST['quality'] ?? 'Mittel';
         
         if (!empty($name) && !empty($format)) {
-            try {
-                $stmt = $pdo->prepare("INSERT INTO decks (name, format_type, user_id, strategy, quality_level, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
-                $stmt->execute([$name, $format, $_SESSION['user_id'], $strategy, $quality]);
-                $deck_id = $pdo->lastInsertId();
-                
-                // Generate deck based on AI parameters
-                if (!empty($strategy)) {
-                    generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $_SESSION['user_id']);
-                }
-                
-                $success_message = "Deck wurde erfolgreich erstellt!";
-            } catch (Exception $e) {
-                $error_message = "Fehler beim Erstellen des Decks: " . $e->getMessage();
+            $stmt = $pdo->prepare("INSERT INTO decks (name, format_type, user_id, strategy, quality_level, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+            $stmt->execute([$name, $format, $_SESSION['user_id'], $strategy, $quality]);
+            $deck_id = $pdo->lastInsertId();
+            
+            // Generate deck based on AI parameters
+            if (!empty($strategy)) {
+                generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $_SESSION['user_id']);
             }
-        } else {
-            $error_message = "Bitte füllen Sie alle Pflichtfelder aus.";
+            
+            $success_message = "Deck wurde erfolgreich erstellt!";
         }
     } elseif ($_POST['action'] === 'delete_deck') {
         $deck_id = intval($_POST['deck_id']);
-        try {
-            $stmt = $pdo->prepare("DELETE FROM deck_cards WHERE deck_id = ?");
-            $stmt->execute([$deck_id]);
-            $stmt = $pdo->prepare("DELETE FROM decks WHERE id = ? AND user_id = ?");
-            $stmt->execute([$deck_id, $_SESSION['user_id']]);
-            $success_message = "Deck wurde gelöscht!";
-        } catch (Exception $e) {
-            $error_message = "Fehler beim Löschen: " . $e->getMessage();
-        }
+        $stmt = $pdo->prepare("DELETE FROM deck_cards WHERE deck_id = ?");
+        $stmt->execute([$deck_id]);
+        $stmt = $pdo->prepare("DELETE FROM decks WHERE id = ? AND user_id = ?");
+        $stmt->execute([$deck_id, $_SESSION['user_id']]);
+        $success_message = "Deck wurde gelöscht!";
     }
 }
 
 // Get existing decks
-try {
-    $stmt = $pdo->prepare("
-        SELECT d.*, 
-               COUNT(dc.id) as card_count,
-               SUM(dc.quantity) as total_cards
-        FROM decks d
-        LEFT JOIN deck_cards dc ON d.id = dc.deck_id AND dc.is_sideboard = 0
-        WHERE d.user_id = ?
-        GROUP BY d.id
-        ORDER BY d.created_at DESC
-    ");
-    $stmt->execute([$_SESSION['user_id']]);
-    $existing_decks = $stmt->fetchAll();
-} catch (Exception $e) {
-    $existing_decks = [];
-    $error_message = "Fehler beim Laden der Decks: " . $e->getMessage();
-}
+$stmt = $pdo->prepare("
+    SELECT d.*, 
+           COUNT(dc.id) as card_count,
+           SUM(dc.quantity) as total_cards
+    FROM decks d
+    LEFT JOIN deck_cards dc ON d.id = dc.deck_id AND dc.is_sideboard = 0
+    WHERE d.user_id = ?
+    GROUP BY d.id
+    ORDER BY d.created_at DESC
+");
+$stmt->execute([$_SESSION['user_id']]);
+$existing_decks = $stmt->fetchAll();
 
 // AI Deck Generation Function
 function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) {
     // Get user's collection
-    try {
-        $stmt = $pdo->prepare("SELECT DISTINCT card_name FROM collections WHERE user_id = ? LIMIT 100");
-        $stmt->execute([$user_id]);
-        $user_cards = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        if (empty($user_cards)) {
-            // Fallback: Use some basic card names
-            $user_cards = ['Lightning Bolt', 'Counterspell', 'Serra Angel', 'Giant Growth', 'Dark Ritual'];
+    $stmt = $pdo->prepare("SELECT DISTINCT card_name FROM collections WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $user_cards = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    if (empty($user_cards)) return;
+    
+    // Strategy-based card selection
+    $card_pool = [];
+    $mana_curve = [];
+    
+    switch ($strategy) {
+        case 'Aggro':
+            $mana_curve = [1 => 8, 2 => 12, 3 => 8, 4 => 4, 5 => 2, 6 => 1];
+            $preferred_types = ['Creature', 'Instant', 'Sorcery'];
+            break;
+        case 'Control':
+            $mana_curve = [1 => 2, 2 => 6, 3 => 8, 4 => 8, 5 => 6, 6 => 4];
+            $preferred_types = ['Instant', 'Sorcery', 'Enchantment', 'Planeswalker'];
+            break;
+        case 'Midrange':
+            $mana_curve = [1 => 4, 2 => 8, 3 => 10, 4 => 8, 5 => 4, 6 => 2];
+            $preferred_types = ['Creature', 'Instant', 'Sorcery'];
+            break;
+        case 'Combo':
+            $mana_curve = [1 => 6, 2 => 8, 3 => 6, 4 => 6, 5 => 4, 6 => 2];
+            $preferred_types = ['Instant', 'Sorcery', 'Artifact', 'Enchantment'];
+            break;
+        default:
+            $mana_curve = [1 => 6, 2 => 8, 3 => 8, 4 => 6, 5 => 4, 6 => 3];
+            $preferred_types = ['Creature', 'Instant', 'Sorcery'];
+    }
+    
+    // Quality adjustment
+    $quality_multiplier = $quality === 'Hoch' ? 1.2 : ($quality === 'Niedrig' ? 0.8 : 1.0);
+    
+    // Add lands (simplified)
+    $land_count = 24;
+    for ($i = 0; $i < $land_count; $i++) {
+        if (!empty($user_cards)) {
+            $random_land = $user_cards[array_rand($user_cards)];
+            $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, 1, 0)");
+            $stmt->execute([$deck_id, $random_land]);
         }
-        
-        // Strategy-based card selection
-        $mana_curve = [];
-        
-        switch ($strategy) {
-            case 'Aggro':
-                $mana_curve = [1 => 8, 2 => 12, 3 => 8, 4 => 4, 5 => 2, 6 => 1];
-                break;
-            case 'Control':
-                $mana_curve = [1 => 2, 2 => 6, 3 => 8, 4 => 8, 5 => 6, 6 => 4];
-                break;
-            case 'Midrange':
-                $mana_curve = [1 => 4, 2 => 8, 3 => 10, 4 => 8, 5 => 4, 6 => 2];
-                break;
-            case 'Combo':
-                $mana_curve = [1 => 6, 2 => 8, 3 => 6, 4 => 6, 5 => 4, 6 => 2];
-                break;
-            default:
-                $mana_curve = [1 => 6, 2 => 8, 3 => 8, 4 => 6, 5 => 4, 6 => 3];
-        }
-        
-        // Add cards based on mana curve
-        $added_cards = 0;
-        $target_cards = ($format === 'Commander') ? 99 : 60;
-        
-        foreach ($mana_curve as $cmc => $count) {
-            for ($i = 0; $i < $count && $added_cards < $target_cards; $i++) {
-                if (!empty($user_cards)) {
-                    $random_card = $user_cards[array_rand($user_cards)];
-                    $quantity = ($format === 'Commander') ? 1 : rand(1, 4);
-                    
-                    $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
-                    $stmt->execute([$deck_id, $random_card, $quantity]);
-                    $added_cards++;
-                }
+    }
+    
+    // Add non-land cards based on mana curve
+    $added_cards = 0;
+    $target_cards = 36; // 60 total - 24 lands
+    
+    foreach ($mana_curve as $cmc => $count) {
+        for ($i = 0; $i < $count && $added_cards < $target_cards; $i++) {
+            if (!empty($user_cards)) {
+                $random_card = $user_cards[array_rand($user_cards)];
+                $quantity = rand(1, 4);
+                
+                $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
+                $stmt->execute([$deck_id, $random_card, $quantity]);
+                $added_cards++;
             }
         }
-    } catch (Exception $e) {
-        // Ignore generation errors
     }
 }
 ?>
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Deck Builder - MTG Collection Manager</title>
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        /* Message styles */
-        .message {
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            border: 1px solid;
-        }
-        .message-success {
-            background-color: #f0f9ff;
-            border-color: var(--success-color);
-            color: var(--success-color);
-        }
-        .message-error {
-            background-color: #fef2f2;
-            border-color: var(--danger-color);
-            color: var(--danger-color);
-        }
-        .message-close {
-            float: right;
-            background: none;
-            border: none;
-            font-size: 1.2rem;
-            cursor: pointer;
-            opacity: 0.7;
-        }
-        .message-close:hover {
-            opacity: 1;
-        }
-        
-        /* Custom deck builder styles */
         .deck-builder-card {
-            background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 12px;
-            padding: 2rem;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
         }
         .strategy-btn {
             width: 100%;
             height: 80px;
             margin-bottom: 10px;
-            border-radius: 8px;
-            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            border: 2px solid transparent;
             transition: all 0.3s ease;
         }
         .strategy-btn.active {
-            border-color: var(--primary-color);
-            background-color: var(--primary-color);
+            border-color: #667eea;
+            background-color: #667eea;
             color: white;
         }
         .strategy-btn:hover {
-            border-color: var(--primary-hover);
-            background-color: rgba(37, 99, 235, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         .ai-features {
             background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            color: #333;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
         }
         .deck-card {
+            border-radius: 10px;
             transition: transform 0.2s ease;
-            margin-bottom: 1rem;
         }
         .deck-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-5px);
         }
         .format-badge {
             font-size: 0.8rem;
             padding: 4px 8px;
         }
         .deck-stats {
-            background: var(--background-color);
+            background: #f8f9fa;
             border-radius: 8px;
-            padding: 1rem;
-            margin-top: 1rem;
+            padding: 10px;
         }
     </style>
 </head>
 <body>
     <?php include 'includes/navbar.php'; ?>
     
-    <div class="container">
-        <div class="main-content">
-        <?php if ($success_message): ?>
-            <div class="message message-success">
-                <button class="message-close" onclick="this.parentElement.style.display='none'">&times;</button>
-                <i class="fas fa-check-circle"></i> <?= htmlspecialchars($success_message) ?>
-            </div>
-        <?php endif; ?>
-        
-        <?php if ($error_message): ?>
-            <div class="message message-error">
-                <button class="message-close" onclick="this.parentElement.style.display='none'">&times;</button>
-                <i class="fas fa-exclamation-triangle"></i> <?= htmlspecialchars($error_message) ?>
-            </div>
-        <?php endif; ?>
-        
+    <div class="container mt-4">
         <div class="row">
             <!-- Left Column: Deck Builder -->
             <div class="col-md-6">
                 <div class="card deck-builder-card">
                     <div class="card-body">
                         <h3><i class="fas fa-brain"></i> Intelligenter Deck Builder</h3>
-                        <p class="mb-4">Erstellen Sie optimierte Decks mit KI-Unterstützung</p>
+                        
+                        <?php if (isset($success_message)): ?>
+                            <div class="alert alert-success"><?= $success_message ?></div>
+                        <?php endif; ?>
                         
                         <form method="post" id="deckBuilderForm">
                             <input type="hidden" name="action" value="create_deck">
@@ -263,7 +211,7 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
                             <!-- Strategy Selection -->
                             <div class="mb-3">
                                 <label class="form-label"><i class="fas fa-chess"></i> Deck-Strategie</label>
-                                <p class="small text-light mb-3">Wählen Sie die Hauptstrategie für optimale Kartenselektion</p>
+                                <p class="small text-light">Wählen Sie die Hauptstrategie für optimale Kartenselektion</p>
                                 <div class="row">
                                     <div class="col-6">
                                         <button type="button" class="btn btn-outline-light strategy-btn" data-strategy="Aggro">
@@ -347,7 +295,7 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
                             </div>
                         <?php else: ?>
                             <?php foreach ($existing_decks as $deck): ?>
-                                <div class="deck-card card">
+                                <div class="deck-card card mb-3">
                                     <div class="card-body">
                                         <div class="d-flex justify-content-between align-items-start">
                                             <div>
@@ -370,7 +318,7 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
                                             </div>
                                         </div>
                                         
-                                        <div class="deck-stats">
+                                        <div class="deck-stats mt-2">
                                             <small class="text-muted">
                                                 <i class="fas fa-calendar"></i> Erstellt: <?= date('d.m.Y', strtotime($deck['created_at'])) ?>
                                                 <?php if ($deck['quality_level']): ?>
@@ -402,9 +350,9 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
                 </div>
             </div>
         </div>
-        </div> <!-- end main-content -->
-    </div> <!-- end container -->
+    </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Strategy selection handling
         document.querySelectorAll('.strategy-btn').forEach(btn => {
@@ -437,31 +385,6 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
                 nameInput.value = strategy + ' ' + format + ' Deck';
             }
         }
-        
-        // Form validation
-        document.getElementById('deckBuilderForm').addEventListener('submit', function(e) {
-            const format = document.querySelector('select[name="format"]').value;
-            const strategy = document.getElementById('selectedStrategy').value;
-            const name = document.querySelector('input[name="name"]').value;
-            
-            if (!format) {
-                e.preventDefault();
-                alert('Bitte wählen Sie ein Format aus!');
-                return;
-            }
-            
-            if (!strategy) {
-                e.preventDefault();
-                alert('Bitte wählen Sie eine Strategie aus!');
-                return;
-            }
-            
-            if (!name.trim()) {
-                e.preventDefault();
-                alert('Bitte geben Sie einen Deck-Namen ein!');
-                return;
-            }
-        });
     </script>
 </body>
 </html>
