@@ -1472,9 +1472,9 @@ $user = $stmt->fetch();
                 </div>
                 <div class="card-modal-actions">
                     <div class="quantity-controls">
-                        <button class="quantity-btn" onclick="updateCardQuantity(${fullCardData.id}, ${fullCardData.quantity - 1})">-</button>
+                        <button class="quantity-btn" id="modalMinusBtn">-</button>
                         <div class="quantity-display" id="modalQuantity">${fullCardData.quantity}x</div>
-                        <button class="quantity-btn" onclick="updateCardQuantity(${fullCardData.id}, ${fullCardData.quantity + 1})">+</button>
+                        <button class="quantity-btn" id="modalPlusBtn">+</button>
                     </div>
                     <div class="card-modal-footer-text">
                         In Sammlung seit: ${new Date(fullCardData.added_at).toLocaleDateString('de-DE')}
@@ -1488,6 +1488,27 @@ $user = $stmt->fetch();
             // Modal anzeigen
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
+
+            // Event-Listener für Plus/Minus Buttons
+            setTimeout(() => {
+                const minusBtn = document.getElementById('modalMinusBtn');
+                const plusBtn = document.getElementById('modalPlusBtn');
+                const modalQuantity = document.getElementById('modalQuantity');
+                if (minusBtn && plusBtn && modalQuantity) {
+                    minusBtn.onclick = function() {
+                        let current = parseInt(modalQuantity.textContent);
+                        if (isNaN(current)) current = fullCardData.quantity;
+                        if (current > 1) {
+                            updateCardQuantity(fullCardData.id, current - 1);
+                        }
+                    };
+                    plusBtn.onclick = function() {
+                        let current = parseInt(modalQuantity.textContent);
+                        if (isNaN(current)) current = fullCardData.quantity;
+                        updateCardQuantity(fullCardData.id, current + 1);
+                    };
+                }
+            }, 100);
         }
         
         function closeCardModal() {

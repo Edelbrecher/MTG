@@ -1,108 +1,156 @@
+
 <?php
 session_start();
 require_once '../config/database.php';
-
-// Check if user is admin
 if (!isset($_SESSION['user_id']) || !$_SESSION['is_admin']) {
     header('Location: ../index.php');
     exit();
 }
-
-// Handle admin actions
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'toggle_admin') {
-        $user_id = intval($_POST['user_id']);
-        $stmt = $pdo->prepare("UPDATE users SET is_admin = NOT is_admin WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $message = "Admin-Status wurde geändert.";
-    } elseif ($_POST['action'] === 'delete_user') {
-        $user_id = intval($_POST['user_id']);
-        if ($user_id !== $_SESSION['user_id']) { // Can't delete self
-            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-            $stmt->execute([$user_id]);
-            $message = "Benutzer wurde gelöscht.";
-        } else {
-            $error = "Sie können sich nicht selbst löschen.";
-        }
-    } elseif ($_POST['action'] === 'cleanup_database') {
-        // Remove orphaned records
-        $pdo->exec("DELETE FROM deck_cards WHERE deck_id NOT IN (SELECT id FROM decks)");
-        $pdo->exec("DELETE FROM user_settings WHERE user_id NOT IN (SELECT id FROM users)");
-        $message = "Datenbank wurde bereinigt.";
-    }
-}
-
-// Get system statistics
+// Statistiken
 $stmt = $pdo->query("SELECT COUNT(*) FROM users");
 $total_users = $stmt->fetchColumn();
-
 $stmt = $pdo->query("SELECT COUNT(DISTINCT card_name) FROM collections");
 $unique_cards = $stmt->fetchColumn();
-
 $stmt = $pdo->query("SELECT COUNT(*) FROM decks");
 $total_decks = $stmt->fetchColumn();
-
 $stmt = $pdo->query("SELECT SUM(quantity) FROM collections");
 $total_cards = $stmt->fetchColumn() ?: 0;
-
-// Get all users
-$stmt = $pdo->query("
-    SELECT u.*, 
-           COUNT(DISTINCT c.id) as card_count,
-           COUNT(DISTINCT d.id) as deck_count,
-           SUM(c.quantity) as total_quantity
-    FROM users u
-    LEFT JOIN collections c ON u.id = c.user_id
-    LEFT JOIN decks d ON u.id = d.user_id
-    GROUP BY u.id
-    ORDER BY u.created_at DESC
-");
-$users = $stmt->fetchAll();
-
-// Get recent activity
-$stmt = $pdo->query("
-    SELECT 'card_added' as activity_type, u.username, c.card_name as item_name, c.added_at as activity_date
-    FROM collections c
-    JOIN users u ON c.user_id = u.id
-    UNION ALL
-    SELECT 'deck_created' as activity_type, u.username, d.name as item_name, d.created_at as activity_date
-    FROM decks d
-    JOIN users u ON d.user_id = u.id
-    ORDER BY activity_date DESC
-    LIMIT 10
-");
-$recent_activity = $stmt->fetchAll();
+// Letzte Aktivitäten (Dummy-Daten, später dynamisch)
+$recent_activity = [];
 ?>
+<?php include '../includes/navbar.php'; ?>
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-    <title>Admin Dashboard - MTG Collection Manager</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        .stat-card .stat-value {
-            font-size: 2.5rem;
-            font-weight: bold;
-        }
-        .activity-item {
-            border-left: 4px solid #007bff;
-            padding-left: 15px;
-            margin-bottom: 10px;
-        }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-Dashboard - MTG Collection Manager</title>
+    <link rel="stylesheet" href="../assets/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <?php include '../includes/navbar.php'; ?>
-    
-    <div class="container mt-4">
+<div class="container">
+    <div class="main-content">
+        <div class="page-header">
+            <h1 class="page-title">Admin-Dashboard</h1>
+            <p class="page-subtitle">Alle wichtigen Verwaltungsfunktionen auf einen Blick</p>
+        </div>
+        <div class="card-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px; margin-bottom: 32px;">
+            <!-- Nutzerverwaltung -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(59,130,246,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: var(--primary-color); font-weight: 600;">👤 Nutzerverwaltung</h3>
+                    <p style="color: #374151;">Alle Nutzer anzeigen, bearbeiten, sperren, löschen und deren Decks/Karten verwalten.</p>
+                    <a href="user_management.php" class="btn btn-primary">Nutzer verwalten</a>
+                </div>
+            </div>
+            <!-- Deckverwaltung -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(34,197,94,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: #22c55e; font-weight: 600;">🗂️ Deckverwaltung</h3>
+                    <p style="color: #374151;">Alle Decks anzeigen, bearbeiten, löschen und Nutzern zuordnen.</p>
+                    <a href="deck_management.php" class="btn btn-primary">Decks verwalten</a>
+                </div>
+            </div>
+            <!-- Kartenverwaltung -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(245,158,11,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: #f59e0b; font-weight: 600;">🃏 Kartenverwaltung</h3>
+                    <p style="color: #374151;">Karten importieren, Duplikate finden, Karten löschen.</p>
+                    <a href="../bulk_import.php" class="btn btn-secondary">Bulk Import</a>
+                    <a href="card_management.php" class="btn btn-primary" style="margin-left:8px;">Karten verwalten</a>
+                </div>
+            </div>
+            <!-- Backup & Restore -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(59,130,246,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: #6366f1; font-weight: 600;">💾 Backup & Restore</h3>
+                    <p style="color: #374151;">Datenbank-Backup erstellen, herunterladen und wiederherstellen.</p>
+                    <a href="backup.php" class="btn btn-primary">Backup erstellen</a>
+                    <a href="backup_history.php" class="btn btn-secondary" style="margin-left:8px;">Backup-Historie</a>
+                </div>
+            </div>
+            <!-- Debug-Zone -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(239,68,68,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: #ef4444; font-weight: 600;">🛠️ Debug-Zone</h3>
+                    <p style="color: #374151;">Logs, Testfunktionen, Systeminfos und Fehleranalyse.</p>
+                    <a href="debug.php" class="btn btn-primary">Debug-Bereich</a>
+                </div>
+            </div>
+            <!-- Einstellungen -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(16,185,129,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: #10b981; font-weight: 600;">⚙️ Einstellungen</h3>
+                    <p style="color: #374151;">Globale Einstellungen, Passwortregeln, Admin-Passwort ändern.</p>
+                    <a href="settings.php" class="btn btn-primary">Einstellungen</a>
+                </div>
+            </div>
+        </div>
+        <div class="card" style="margin-top:32px; box-shadow: 0 4px 16px rgba(59,130,246,0.08); border-radius: 14px;">
+            <div class="card-body">
+                <h4 style="color: var(--primary-color); font-weight: 600;">Statistiken</h4>
+                <ul style="list-style:none; padding:0; color: #374151;">
+                    <li><strong>Nutzer:</strong> <?php echo $total_users; ?></li>
+                    <li><strong>Decks:</strong> <?php echo $total_decks; ?></li>
+                    <li><strong>Karten:</strong> <?php echo $total_cards; ?></li>
+                    <li><strong>Einzigartige Karten:</strong> <?php echo $unique_cards; ?></li>
+                </ul>
+            </div>
+        </div>
+        <div class="card mb-3" style="margin-top:24px; box-shadow: 0 4px 16px rgba(59,130,246,0.08); border-radius: 14px;">
+            <div class="card-body">
+                <h4 style="margin-bottom: 16px; color: var(--primary-color); font-weight: 600;">Letzte Aktivitäten</h4>
+                <ul style="list-style: none; padding: 0; margin: 0; color: #374151;">
+                    <?php if (empty($recent_activity)): ?>
+                        <li>Keine Aktivitäten vorhanden.</li>
+                    <?php else: ?>
+                        <?php foreach ($recent_activity as $activity): ?>
+                            <li style="margin-bottom: 10px; border-left: 4px solid #007bff; padding-left: 15px;">
+                                <span style="font-weight: bold; color: #374151;"><?php echo htmlspecialchars($activity['username']); ?></span>
+                                <span style="color: #6b7280;">hat</span>
+                                <span style="color: #007bff; font-weight: 500;"><?php echo htmlspecialchars($activity['item_name']); ?></span>
+                                <span style="color: #6b7280;">(<?php echo $activity['activity_type'] === 'card_added' ? 'Karte hinzugefügt' : 'Deck erstellt'; ?>)</span>
+                                <span style="color: #9ca3af; float: right; font-size: 0.9em;">am <?php echo date('d.m.Y H:i', strtotime($activity['activity_date'])); ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+<?php include '../includes/footer.php'; ?>
+</body>
+</html>
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 18px;">
+                    <li><a href="migrate_existing_cards.php" class="btn btn-secondary">Migration: Karten aktualisieren</a></li>
+                    <li><a href="../bulk_import.php" class="btn btn-secondary">Bulk Import</a></li>
+                    <li><a href="../check_import_tables.php" class="btn btn-secondary">Import Tabellen prüfen</a></li>
+                    <li><a href="../check_migration.php" class="btn btn-secondary">Migration prüfen</a></li>
+                    <li><a href="../reset.php" class="btn btn-danger">Datenbank zurücksetzen</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="card" style="margin-bottom: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.08); border-radius: 12px;">
+            <div class="card-body">
+                <h4 style="margin-bottom: 16px; color: var(--primary-color);">Letzte Aktivitäten</h4>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                    <?php foreach ($recent_activity as $activity): ?>
+                        <li style="margin-bottom: 10px; border-left: 4px solid #007bff; padding-left: 15px;">
+                            <span style="font-weight: bold; color: #374151;"><?php echo htmlspecialchars($activity['username']); ?></span>
+                            <span style="color: #6b7280;">hat</span>
+                            <span style="color: #007bff; font-weight: 500;"><?php echo htmlspecialchars($activity['item_name']); ?></span>
+                            <span style="color: #6b7280;">(<?php echo $activity['activity_type'] === 'card_added' ? 'Karte hinzugefügt' : 'Deck erstellt'; ?>)</span>
+                            <span style="color: #9ca3af; float: right; font-size: 0.9em;">am <?php echo date('d.m.Y H:i', strtotime($activity['activity_date'])); ?></span>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
         <div class="row">
             <div class="col-12">
                 <h1><i class="fas fa-user-shield"></i> Admin Dashboard</h1>
