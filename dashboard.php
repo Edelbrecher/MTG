@@ -62,6 +62,8 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - MTG Collection Manager</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
     <link rel="stylesheet" href="assets/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -107,6 +109,7 @@ try {
                         <a href="collection.php" class="btn btn-primary">Sammlung verwalten</a>
                         <a href="bulk_import.php" class="btn btn-primary">📦 Bulk-Import</a>
                         <a href="decks.php" class="btn btn-secondary">Decks erstellen</a>
+                        <a href="profile.php" class="btn btn-secondary">👤 Mein Profil</a>
                         <a href="settings.php" class="btn btn-secondary">Einstellungen</a>
                     </div>
                 </div>

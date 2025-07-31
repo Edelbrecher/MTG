@@ -1,11 +1,15 @@
 <?php
 session_start();
 require_once 'config/database.php';
+require_once 'includes/card_translator.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit();
 }
+
+// Get user language preference
+$userLanguage = CardTranslator::getUserLanguage($pdo, $_SESSION['user_id']);
 
 // Hilfsfunktion um die richtige Bild-URL zu ermitteln
 function getCardImageUrl($card_data) {
@@ -76,6 +80,8 @@ $user = $stmt->fetch();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sammlung - MTG Collection Manager</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
     <link rel="stylesheet" href="assets/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -215,6 +221,8 @@ $user = $stmt->fetch();
             height: 120px; /* Reduced from default */
             width: auto;
             object-fit: cover;
+            display: block;
+            margin: 0 auto; /* Center the image */
         }
         
         /* Enhanced card content area */
@@ -240,6 +248,47 @@ $user = $stmt->fetch();
         
         .mtg-card-text:empty {
             display: none;
+        }
+        
+        .translate-btn {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .translate-btn:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+        
+        .translate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .card-modal-translation {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .card-modal-translation .translate-btn {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border-radius: 6px;
+            border: 1px solid var(--primary-color);
+            background: var(--surface-color);
+            color: var(--primary-color);
+            transition: all 0.2s;
+        }
+        
+        .card-modal-translation .translate-btn:hover {
+            background: var(--primary-color);
+            color: white;
         }
         
         /* Responsive adjustments - reduce columns on smaller screens */
@@ -316,6 +365,8 @@ $user = $stmt->fetch();
             object-fit: cover;
             border-radius: 4px;
             border: 1px solid #e5e7eb;
+            display: block;
+            margin: 0 auto; /* Center the image */
         }
         
         .card-name-cell {
@@ -951,7 +1002,12 @@ $user = $stmt->fetch();
                             <!-- Card Text -->
                             <?php if (!empty($card_data['oracle_text'])): ?>
                                 <div class="mtg-card-text">
-                                    <?php echo nl2br(htmlspecialchars($card_data['oracle_text'])); ?>
+                                    <?php 
+                                    $displayText = $userLanguage === 'de' 
+                                        ? CardTranslator::translateCardText($card_data['oracle_text'], 'de')
+                                        : $card_data['oracle_text'];
+                                    echo nl2br(htmlspecialchars($displayText)); 
+                                    ?>
                                 </div>
                             <?php endif; ?>
                             
@@ -1443,8 +1499,18 @@ $user = $stmt->fetch();
                         <div class="card-modal-type">${parsedCardData.type_line || 'Unbekannter Typ'}</div>
                         
                         ${parsedCardData.oracle_text ? `
-                            <div class="card-modal-text">
+                            <div class="card-modal-text" id="modalCardText">
                                 ${parsedCardData.oracle_text.replace(/\\n/g, '<br>')}
+                            </div>
+                            <div class="card-modal-translation" style="margin-top: 10px;">
+                                <button class="translate-btn" 
+                                        data-card-id="${fullCardData.id}" 
+                                        data-target-lang="de"
+                                        data-original-text="${parsedCardData.oracle_text.replace(/"/g, '&quot;')}"
+                                        data-original-type="${parsedCardData.type_line ? parsedCardData.type_line.replace(/"/g, '&quot;') : ''}"
+                                        id="modalTranslateBtn">
+                                    🇩🇪 Auf Deutsch
+                                </button>
                             </div>
                         ` : ''}
                         
@@ -1488,6 +1554,28 @@ $user = $stmt->fetch();
             // Modal anzeigen
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
+
+            // Set correct translation button and initial text based on user language preference
+            const userLang = '<?php echo $userLanguage; ?>';
+            const translateBtn = document.getElementById('modalTranslateBtn');
+            const modalCardText = document.getElementById('modalCardText');
+            const modalTypeElement = document.querySelector('.card-modal-type');
+            
+            if (translateBtn) {
+                // If user prefers German, show German text and offer English translation
+                if (userLang === 'de') {
+                    translateBtn.dataset.targetLang = 'en';
+                    translateBtn.textContent = '🇺🇸 Auf Englisch';
+                    
+                    // Translate text to German immediately if we have text
+                    if (parsedCardData.oracle_text) {
+                        translateCard(fullCardData.id, 'de', true); // true = silent mode
+                    }
+                } else {
+                    translateBtn.dataset.targetLang = 'de';
+                    translateBtn.textContent = '🇩🇪 Auf Deutsch';
+                }
+            }
 
             // Event-Listener für Plus/Minus Buttons
             setTimeout(() => {
@@ -1633,6 +1721,78 @@ $user = $stmt->fetch();
                     closeCardModal();
                 }
             });
+        });
+
+        // Translation functionality
+        function translateCard(cardId, targetLang, silent = false) {
+            const button = document.querySelector(`[data-card-id="${cardId}"].translate-btn`);
+            if (button && !silent) {
+                button.disabled = true;
+                button.textContent = 'Übersetze...';
+            }
+
+            fetch('api/translate.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'translate_card',
+                    card_id: cardId,
+                    target_lang: targetLang
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update modal text elements
+                    const modalCardText = document.getElementById('modalCardText');
+                    const modalTypeElement = document.querySelector('.card-modal-type');
+                    
+                    if (data.translations.oracle_text && modalCardText) {
+                        modalCardText.innerHTML = data.translations.oracle_text.replace(/\n/g, '<br>');
+                    }
+                    
+                    if (data.translations.type_line && modalTypeElement) {
+                        modalTypeElement.textContent = data.translations.type_line;
+                    }
+                    
+                    // Update button
+                    const newTargetLang = targetLang === 'en' ? 'de' : 'en';
+                    const newButtonText = targetLang === 'en' ? '�� Auf Englisch' : '�� Auf Deutsch';
+                    
+                    if (button) {
+                        button.textContent = newButtonText;
+                        button.dataset.targetLang = newTargetLang;
+                        button.disabled = false;
+                    }
+                } else {
+                    console.error('Translation error:', data.error);
+                    if (button && !silent) {
+                        button.disabled = false;
+                        const originalText = targetLang === 'en' ? '🇩🇪 Auf Deutsch' : '🇺🇸 Auf Englisch';
+                        button.textContent = originalText;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Network error:', error);
+                if (button && !silent) {
+                    button.disabled = false;
+                    const originalText = targetLang === 'en' ? '🇩🇪 Auf Deutsch' : '🇺🇸 Auf Englisch';
+                    button.textContent = originalText;
+                }
+            });
+        }
+
+        // Add click handlers for translate buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('translate-btn')) {
+                e.preventDefault();
+                const cardId = e.target.dataset.cardId;
+                const targetLang = e.target.dataset.targetLang;
+                translateCard(cardId, targetLang);
+            }
         });
     </script>
     

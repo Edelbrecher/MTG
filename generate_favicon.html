@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Favicon Generator</title>
+</head>
+<body>
+    <canvas id="favicon" width="32" height="32"></canvas>
+    <script>
+        const canvas = document.getElementById('favicon');
+        const ctx = canvas.getContext('2d');
+        
+        // Background gradient
+        const gradient = ctx.createLinearGradient(0, 0, 32, 32);
+        gradient.addColorStop(0, '#2563eb');
+        gradient.addColorStop(1, '#1d4ed8');
+        
+        // Draw card background
+        ctx.fillStyle = gradient;
+        ctx.fillRect(2, 1, 28, 30);
+        
+        // Border
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(2, 1, 28, 30);
+        
+        // Mana symbols
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(10, 8, 3, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        ctx.fillStyle = '#0ea5e9';
+        ctx.beginPath();
+        ctx.arc(22, 8, 3, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Text lines
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.8;
+        ctx.fillRect(4, 16, 24, 2);
+        ctx.globalAlpha = 0.6;
+        ctx.fillRect(4, 20, 20, 1);
+        ctx.fillRect(4, 22, 24, 1);
+        ctx.fillRect(4, 24, 18, 1);
+        
+        // Get image data and download
+        const link = document.createElement('a');
+        link.download = 'favicon.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    </script>
+</body>
+</html>

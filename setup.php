@@ -197,6 +197,8 @@ function fetchCardAPI($card_name) {
 <html>
 <head>
     <title>MTG Setup</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; max-width: 1000px; }
         details { margin: 10px 0; padding: 10px; border: 1px solid #ddd; }

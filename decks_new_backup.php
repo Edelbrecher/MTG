@@ -504,6 +504,182 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
     }
 }
 
+// Helper function to get commander color identity
+function getCommanderColorIdentity($pdo, $commander_name, $user_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT card_data FROM collections WHERE user_id = ? AND card_name = ? LIMIT 1");
+        $stmt->execute([$user_id, $commander_name]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result && !empty($result['card_data'])) {
+            $card_data = json_decode($result['card_data'], true);
+            if (isset($card_data['colorIdentity'])) {
+                return $card_data['colorIdentity'];
+            }
+        }
+        
+        return [];
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+// Helper function to check if card is legal in Commander format
+function isCardLegalInCommander($card_data, $commander_colors) {
+    if (empty($card_data) || empty($commander_colors)) {
+        return true;
+    }
+    
+    try {
+        $data = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+        
+        if (isset($data['colorIdentity'])) {
+            $card_colors = $data['colorIdentity'];
+            
+            foreach ($card_colors as $color) {
+                if (!in_array($color, $commander_colors)) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    } catch (Exception $e) {
+        return true;
+    }
+}
+
+// Helper function to extract mana value from card data
+function extractManaValue($card_data) {
+    if (empty($card_data)) {
+        return 0;
+    }
+    
+    try {
+        $data = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+        
+        if (isset($data['manaValue'])) {
+            return (int)$data['manaValue'];
+        }
+        
+        if (isset($data['cmc'])) {
+            return (int)$data['cmc'];
+        }
+        
+        if (isset($data['manaCost'])) {
+            $mana_cost = $data['manaCost'];
+            preg_match_all('/\{(\d+)\}/', $mana_cost, $numbers);
+            preg_match_all('/\{[WUBRG]\}/', $mana_cost, $colors);
+            
+            $total = 0;
+            foreach ($numbers[1] as $num) {
+                $total += (int)$num;
+            }
+            $total += count($colors[0]);
+            
+            return $total;
+        }
+        
+        return 0;
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+?>
+}
+
+// Helper function to get commander color identity
+function getCommanderColorIdentity($pdo, $commander_name, $user_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT card_data FROM collections WHERE user_id = ? AND card_name = ? LIMIT 1");
+        $stmt->execute([$user_id, $commander_name]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result && !empty($result['card_data'])) {
+            $card_data = json_decode($result['card_data'], true);
+            if (isset($card_data['colorIdentity'])) {
+                return $card_data['colorIdentity'];
+            }
+        }
+        
+        // Fallback: Try to extract from card name patterns
+        $colors = [];
+        if (stripos($commander_name, 'white') !== false) $colors[] = 'W';
+        if (stripos($commander_name, 'blue') !== false) $colors[] = 'U';
+        if (stripos($commander_name, 'black') !== false) $colors[] = 'B';
+        if (stripos($commander_name, 'red') !== false) $colors[] = 'R';
+        if (stripos($commander_name, 'green') !== false) $colors[] = 'G';
+        
+        return $colors;
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+// Helper function to check if card is legal in Commander format
+function isCardLegalInCommander($card_data, $commander_colors) {
+    if (empty($card_data) || empty($commander_colors)) {
+        return true; // If we can't verify, allow it
+    }
+    
+    try {
+        $data = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+        
+        if (isset($data['colorIdentity'])) {
+            $card_colors = $data['colorIdentity'];
+            
+            // Check if all card colors are in commander's color identity
+            foreach ($card_colors as $color) {
+                if (!in_array($color, $commander_colors)) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    } catch (Exception $e) {
+        return true; // If error, allow the card
+    }
+}
+
+// Helper function to extract mana value from card data
+function extractManaValue($card_data) {
+    if (empty($card_data)) {
+        return 0;
+    }
+    
+    try {
+        $data = is_string($card_data) ? json_decode($card_data, true) : $card_data;
+        
+        if (isset($data['manaValue'])) {
+            return (int)$data['manaValue'];
+        }
+        
+        if (isset($data['cmc'])) {
+            return (int)$data['cmc'];
+        }
+        
+        // Fallback: try to parse mana cost
+        if (isset($data['manaCost'])) {
+            $mana_cost = $data['manaCost'];
+            preg_match_all('/\{(\d+)\}/', $mana_cost, $numbers);
+            preg_match_all('/\{[WUBRG]\}/', $mana_cost, $colors);
+            
+            $total = 0;
+            foreach ($numbers[1] as $num) {
+                $total += (int)$num;
+            }
+            $total += count($colors[0]);
+            
+            return $total;
+        }
+        
+        return 0;
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
 // Legacy AI Deck Generation Function (keep for compatibility)
 function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) {
     // Get user's collection
@@ -564,8 +740,6 @@ function generateAIDeck($pdo, $deck_id, $strategy, $format, $quality, $user_id) 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Deck Builder - MTG Collection Manager</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
     <link rel="stylesheet" href="assets/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
