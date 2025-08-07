@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PHP Apache Web Server
+  web:
+    build: .
+    container_name: mtg_web
+    volumes:
+      - ./:/var/www/html
+      - ./docker/php.ini:/usr/local/etc/php/php.ini
+      - /var/run/apache:/var/run/apache
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_NAME=mtg_collection
+      - DB_USER=mtg_user
+      - DB_PASSWORD=mtg_password
+    networks:
+      - mtg_network
+
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: mtg_db
+    restart: always
+    environment:
+      MYSQL_DATABASE: mtg_collection
+      MYSQL_USER: mtg_user
+      MYSQL_PASSWORD: mtg_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "4444:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/setup.sql:/docker-entrypoint-initdb.d/setup.sql
+    networks:
+      - mtg_network
+
+  # phpMyAdmin (optional, for database management)
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: mtg_phpmyadmin
+    restart: always
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: mtg_user
+      PMA_PASSWORD: mtg_password
+    depends_on:
+      - db
+    networks:
+      - mtg_network
+
+volumes:
+  mysql_data:
+  socket_data:
+
+networks:
+  mtg_network:
+    driver: bridge
