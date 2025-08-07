@@ -1,15 +1,44 @@
 <?php
+// Debug: Enable error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 session_start();
-require_once 'config/database.php';
-require_once 'includes/navbar.php';
+
+// Debug: Check session
+echo "<!-- DEBUG: Session started -->";
+if (isset($_SESSION['user_id'])) {
+    echo "<!-- DEBUG: User ID: " . $_SESSION['user_id'] . " -->";
+} else {
+    echo "<!-- DEBUG: No user session found -->";
+}
+
+try {
+    require_once 'config/database.php';
+    echo "<!-- DEBUG: Database connected -->";
+} catch (Exception $e) {
+    echo "<!-- DEBUG: Database error: " . $e->getMessage() . " -->";
+    die("Database connection failed: " . $e->getMessage());
+}
 
 if (!isset($_SESSION['user_id'])) {
+    echo "<!-- DEBUG: Redirecting to login -->";
     header('Location: auth/login.php');
     exit();
 }
 
 $success_message = '';
 $error_message = '';
+
+echo "<!-- DEBUG: Variables initialized -->";
+
+// Debug: Show if we have a session
+if (!isset($_SESSION['user_id'])) {
+    $error_message = 'Debug: Keine Session gefunden';
+    echo "<!-- DEBUG: No session error set -->";
+} else {
+    echo "<!-- DEBUG: Session OK, User ID: " . $_SESSION['user_id'] . " -->";
+}
 
 // Handle deck creation
 if ($_POST && isset($_POST['action']) && $_POST['action'] === 'create_deck') {
@@ -22,9 +51,28 @@ if ($_POST && isset($_POST['action']) && $_POST['action'] === 'create_deck') {
         $deck_size = (int)($_POST['deck_size'] ?? 60);
         $quality = $_POST['quality'] ?? 'medium';
         $color_focus = $_POST['color_focus'] ?? '';
+        $deck_colors = $_POST['deck_colors'] ?? [];
         
         if (empty($name)) {
             throw new Exception('Deck-Name ist erforderlich');
+        }
+        
+        // Format-spezifische Validierung
+        if ($format === 'Commander' && $deck_size != 100) {
+            throw new Exception('Commander-Decks müssen genau 100 Karten haben');
+        }
+        
+        if (in_array($format, ['Modern', 'Standard', 'Pioneer']) && $deck_size < 60) {
+            throw new Exception($format . '-Decks müssen mindestens 60 Karten haben');
+        }
+        
+        if ($format === 'Commander' && empty($commander)) {
+            throw new Exception('Commander-Format erfordert einen Commander');
+        }
+        
+        // Validate deck colors for Modern, Standard, Pioneer
+        if (in_array($format, ['Modern', 'Standard', 'Pioneer']) && empty($deck_colors)) {
+            throw new Exception($format . '-Format erfordert die Auswahl mindestens einer Deck-Farbe');
         }
         
         // Create deck entry
@@ -39,13 +87,32 @@ if ($_POST && isset($_POST['action']) && $_POST['action'] === 'create_deck') {
                 'commander' => $commander,
                 'ai_features' => $ai_features,
                 'deck_size' => $deck_size,
-                'color_focus' => $color_focus
+                'color_focus' => $color_focus,
+                'deck_colors' => $deck_colors
             ], $ai_log);
+            
+            // Prüfe ob Deck-Generierung erfolgreich war
+            if (!$generation_result['success']) {
+                // Lösche fehlerhaftes Deck
+                $stmt = $pdo->prepare("DELETE FROM deck_cards WHERE deck_id = ?");
+                $stmt->execute([$deck_id]);
+                $stmt = $pdo->prepare("DELETE FROM decks WHERE id = ?");
+                $stmt->execute([$deck_id]);
+                
+                throw new Exception("Deck-Generierung fehlgeschlagen: " . ($generation_result['error'] ?? 'Unbekannter Fehler'));
+            }
             
             // Erstelle detaillierte Erfolgsmeldung
             $feature_count = count($ai_features);
             $ai_summary = implode(', ', $ai_log);
             $success_message = "Deck wurde erfolgreich erstellt mit {$feature_count} AI-Features! 🤖 " . $ai_summary;
+            
+            // Zeige Validierungsergebnis
+            if (isset($generation_result['validation']) && !$generation_result['validation']['success']) {
+                $success_message .= " ⚠️ Validierung: " . $generation_result['validation']['error'];
+            } elseif (isset($generation_result['validation']['stats'])) {
+                $success_message .= " ✅ Validiert: " . $generation_result['validation']['stats'];
+            }
             
             // Prüfe auf potentielle Probleme
             if (isset($generation_result['warnings']) && !empty($generation_result['warnings'])) {
@@ -92,9 +159,17 @@ try {
     ");
     $stmt->execute([$_SESSION['user_id']]);
     $existing_decks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Debug output
+    if (empty($existing_decks)) {
+        $error_message .= ' Debug: Keine Decks gefunden für User ID ' . $_SESSION['user_id'];
+    } else {
+        $success_message .= ' Debug: ' . count($existing_decks) . ' Decks gefunden';
+    }
+    
 } catch (Exception $e) {
     $existing_decks = [];
-    $error_message = 'Fehler beim Laden der Decks: ' . $e->getMessage();
+    $error_message .= ' Debug: Datenbankfehler beim Laden der Decks: ' . $e->getMessage();
 }
 
 // Enhanced AI Deck Generation Function with intelligent monitoring
@@ -103,6 +178,7 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
     $ai_features = $options['ai_features'] ?? [];
     $deck_size = $options['deck_size'] ?? 60;
     $color_focus = $options['color_focus'] ?? '';
+    $deck_colors = $options['deck_colors'] ?? [];
     
     $ai_log = [];
     $warnings = [];
@@ -145,6 +221,15 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         } elseif ($format === 'Commander') {
             // Commander Format OHNE Commander ist nicht erlaubt
             throw new Exception('Commander Format erfordert einen Commander!');
+        } else {
+            // For Modern, Standard, Pioneer - use selected deck colors
+            if (!empty($deck_colors)) {
+                $commander_colors = $deck_colors; // Use selected colors as color restriction
+                $ai_log[] = "🎨 Deck-Farben: " . implode('', $commander_colors) . " (gewählt für {$format})";
+            } else {
+                $commander_colors = []; // No color restrictions for other formats
+                $ai_log[] = "🌈 Keine Farbbeschränkungen für {$format}-Format";
+            }
         }
         
         // Calculate correct target based on deck size and format rules
@@ -227,14 +312,22 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                 $land_count = round($actual_deck_size * 0.4);
             }
             $ai_log[] = "🏞️ {$land_count} Länder geplant";
+        } elseif ($format === 'Commander') {
+            // Commander IMMER mit Ländern - auch ohne Balance-Feature
+            $land_count = 36;
+            $ai_log[] = "🏞️ Commander-Format: {$land_count} Länder automatisch hinzugefügt";
+        } else {
+            // Für andere Formate: Standard-Länder auch ohne Balance-Feature
+            $land_count = round($actual_deck_size * 0.4); // 24 Länder für 60-Karten-Deck
+            $ai_log[] = "🏞️ {$format}-Format: {$land_count} Länder automatisch hinzugefügt";
         }
         
         $non_land_slots = $actual_deck_size - $land_count;
         $spell_target = min($non_land_slots, count($user_cards) * 2);
         $added_cards = 0;
         
-        // Add lands first if balance feature is enabled
-        if (in_array('balance', $ai_features) && $land_count > 0) {
+        // Add lands first if balance feature is enabled or for any format
+        if ($land_count > 0) {
             $ai_log[] = "🏞️ Füge Länder hinzu (Standard-Länder sind unbegrenzt verfügbar)...";
             
             // Standard-Länder sind immer unbegrenzt verfügbar
@@ -256,7 +349,19 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                 }
                 
                 $basic_lands = $available_basics;
+            } elseif (in_array($format, ['Modern', 'Standard', 'Pioneer']) && !empty($commander_colors)) {
+                // For Modern/Standard/Pioneer with selected colors
+                $available_basics = [];
+                if (in_array('W', $commander_colors)) $available_basics[] = 'Plains';
+                if (in_array('U', $commander_colors)) $available_basics[] = 'Island';
+                if (in_array('B', $commander_colors)) $available_basics[] = 'Swamp';
+                if (in_array('R', $commander_colors)) $available_basics[] = 'Mountain';
+                if (in_array('G', $commander_colors)) $available_basics[] = 'Forest';
+                
+                $basic_lands = $available_basics;
+                $ai_log[] = "🎨 {$format} Deck-Farben: " . implode(', ', $available_basics);
             } else {
+                // Für andere Formate: Alle Standard-Länder verfügbar
                 $basic_lands = ['Forest', 'Island', 'Mountain', 'Plains', 'Swamp'];
                 $ai_log[] = "🌍 Alle Standard-Länder verfügbar";
             }
@@ -326,6 +431,14 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                             $reject_reason = 'color_identity';
                             continue; // Sofort zur nächsten Karte
                         }
+                    } elseif (in_array($format, ['Modern', 'Standard', 'Pioneer']) && !empty($commander_colors)) {
+                        // Color restriction for Modern/Standard/Pioneer based on selected colors
+                        $is_legal = isCardLegalInCommander($random_card['card_data'] ?? null, $commander_colors);
+                        if (!$is_legal) {
+                            $cards_rejected_color++;
+                            $reject_reason = 'deck_colors';
+                            continue; // Skip card that doesn't match selected colors
+                        }
                     }
                     
                     $card_cmc = extractManaValue($random_card['card_data'] ?? null);
@@ -338,9 +451,10 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
                     
                     // Karte ist legal und passt zur CMC - hinzufügen
                     if ($is_legal && $cmc_matches) {
-                        $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, 1, 0)");
-                        $stmt->execute([$deck_id, $random_card['card_name']]);
-                        $added_cards++;
+                        $quantity = ($format === 'Commander') ? 1 : min(4, $spell_target - $added_cards);
+                        $stmt = $pdo->prepare("INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, 0)");
+                        $stmt->execute([$deck_id, $random_card['card_name'], $quantity]);
+                        $added_cards += $quantity;
                         $cmc_added++;
                         
                         // Debug: Log hinzugefügte Karte
@@ -459,6 +573,16 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
         $final_count = $added_cards + $land_count + ($format === 'Commander' ? 1 : 0);
         $ai_log[] = "📈 Finales Deck: {$final_count} Karten";
         
+        // Validate deck creation and format rules
+        $validation_result = validateCreatedDeck($pdo, $deck_id, $format, $actual_deck_size + ($format === 'Commander' ? 1 : 0), $ai_log);
+        
+        if (!$validation_result['success']) {
+            $warnings[] = "Deck-Validierung fehlgeschlagen: " . $validation_result['error'];
+            $ai_log[] = "❌ Deck-Validierung: " . $validation_result['error'];
+        } else {
+            $ai_log[] = "✅ Deck-Validierung erfolgreich: " . $validation_result['stats'];
+        }
+        
         return [
             'success' => true,
             'cards_added' => $added_cards,
@@ -466,7 +590,8 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             'total_cards' => $final_count,
             'warnings' => $warnings,
             'mana_curve_analysis' => $mana_curve_analysis,
-            'ai_steps' => $ai_log
+            'ai_steps' => $ai_log,
+            'validation' => $validation_result
         ];
         
     } catch (Exception $e) {
@@ -477,6 +602,103 @@ function generateEnhancedAIDeck($pdo, $deck_id, $strategy, $format, $quality, $u
             'success' => false,
             'error' => $e->getMessage(),
             'ai_steps' => $ai_log
+        ];
+    }
+}
+
+// Deck validation function to check if deck was created successfully and follows format rules
+function validateCreatedDeck($pdo, $deck_id, $format, $expected_size, &$ai_log) {
+    try {
+        // Check if deck exists
+        $stmt = $pdo->prepare("SELECT COUNT(*) as deck_exists FROM decks WHERE id = ?");
+        $stmt->execute([$deck_id]);
+        $deck_exists = $stmt->fetchColumn();
+        
+        if (!$deck_exists) {
+            return [
+                'success' => false,
+                'error' => 'Deck wurde nicht in der Datenbank erstellt'
+            ];
+        }
+        
+        // Get deck cards count
+        $stmt = $pdo->prepare("
+            SELECT 
+                COUNT(DISTINCT card_name) as unique_cards,
+                SUM(quantity) as total_cards,
+                COUNT(CASE WHEN is_commander = 1 THEN 1 END) as commanders
+            FROM deck_cards 
+            WHERE deck_id = ? AND is_sideboard = 0
+        ");
+        $stmt->execute([$deck_id]);
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $validation_errors = [];
+        
+        // Format-specific validation
+        switch ($format) {
+            case 'Commander':
+                // Must have exactly 100 cards
+                if ($stats['total_cards'] != 100) {
+                    $validation_errors[] = "Commander-Deck muss 100 Karten haben (aktuell: {$stats['total_cards']})";
+                }
+                // Must have exactly 1 commander
+                if ($stats['commanders'] != 1) {
+                    $validation_errors[] = "Commander-Deck muss genau 1 Commander haben (aktuell: {$stats['commanders']})";
+                }
+                break;
+                
+            case 'Modern':
+            case 'Standard':
+            case 'Pioneer':
+                // Must have at least 60 cards
+                if ($stats['total_cards'] < 60) {
+                    $validation_errors[] = "{$format}-Deck muss mindestens 60 Karten haben (aktuell: {$stats['total_cards']})";
+                }
+                // Should not have commander
+                if ($stats['commanders'] > 0) {
+                    $validation_errors[] = "{$format}-Deck darf keinen Commander haben";
+                }
+                break;
+                
+            default:
+                // Generic validation
+                if ($stats['total_cards'] < 40) {
+                    $validation_errors[] = "Deck zu klein (aktuell: {$stats['total_cards']})";
+                }
+        }
+        
+        // Check if deck has cards at all
+        if ($stats['total_cards'] == 0) {
+            return [
+                'success' => false,
+                'error' => 'Deck wurde ohne Karten erstellt'
+            ];
+        }
+        
+        $stats_text = "{$stats['unique_cards']} unique, {$stats['total_cards']} total";
+        if ($stats['commanders'] > 0) {
+            $stats_text .= ", {$stats['commanders']} commander";
+        }
+        
+        if (!empty($validation_errors)) {
+            return [
+                'success' => false,
+                'error' => implode('; ', $validation_errors),
+                'stats' => $stats_text
+            ];
+        }
+        
+        return [
+            'success' => true,
+            'stats' => $stats_text,
+            'details' => $stats
+        ];
+        
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'error' => 'Validierung fehlgeschlagen: ' . $e->getMessage()
         ];
     }
 }
@@ -603,170 +825,18 @@ function extractManaValue($card_data) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deck Builder - MTG Collection</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="assets/css/style.css" rel="stylesheet">
+    <title>Deck Builder - MTG Collection Manager</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary-color: #2c5f41;
-            --primary-light: #4a7c59;
-            --secondary-color: #d4af37;
-            --background-color: #1a1a1a;
-            --card-background: #2d2d2d;
-            --text-primary: #ffffff;
-            --text-secondary: #b0b0b0;
-            --border-color: #404040;
-            --success-color: #27ae60;
-            --warning-color: #f39c12;
-            --danger-color: #e74c3c;
+        /* Debug: Test if CSS is loading */
+        body { 
+            background-color: #f8fafc !important; 
         }
-
-        body {
-            background: var(--background-color);
-            color: var(--text-primary);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 1rem;
-        }
-
-        .main-content {
-            margin-top: 2rem;
-            margin-bottom: 2rem;
-        }
-
-        .page-header {
-            text-align: center;
-            margin-bottom: 2rem;
-            padding: 2rem 0;
-            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
-
-        .page-header h1 {
-            margin: 0;
-            font-size: 2.5rem;
-            font-weight: 700;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .page-header p {
-            margin: 0.5rem 0 0 0;
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
-
-        .card {
-            background: var(--card-background);
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            border: 1px solid var(--border-color);
-            margin-bottom: 1.5rem;
-        }
-
-        .two-column {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            margin-top: 2rem;
-        }
-
-        @media (max-width: 768px) {
-            .two-column {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .alert {
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            border-left: 4px solid;
-        }
-
-        .alert-success {
-            background: rgba(39, 174, 96, 0.1);
-            border-color: var(--success-color);
-            color: #2ecc71;
-        }
-
-        .alert-danger {
-            background: rgba(231, 76, 60, 0.1);
-            border-color: var(--danger-color);
-            color: #e74c3c;
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-            color: var(--text-primary);
-        }
-
-        .form-control {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            background: var(--background-color);
-            color: var(--text-primary);
-            font-size: 1rem;
-        }
-
-        .form-control:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 2px rgba(44, 95, 65, 0.2);
-        }
-
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 6px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-block;
-            text-align: center;
-        }
-
-        .btn-primary {
-            background: var(--primary-color);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-light);
-            transform: translateY(-1px);
-        }
-
-        .btn-success {
-            background: var(--success-color);
-            color: white;
-        }
-
-        .btn-danger {
-            background: var(--danger-color);
-            color: white;
-        }
-
-        .btn-sm {
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
-        }
-
+        
+        /* Deck-specific styles to complement the main style.css */
         .strategy-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -775,7 +845,7 @@ function extractManaValue($card_data) {
         }
 
         .strategy-btn-compact {
-            background: var(--card-background);
+            background: var(--surface-color);
             border: 2px solid var(--border-color);
             border-radius: 8px;
             padding: 1rem;
@@ -789,7 +859,7 @@ function extractManaValue($card_data) {
 
         .strategy-btn-compact:hover {
             border-color: var(--primary-color);
-            background: rgba(44, 95, 65, 0.1);
+            background: rgba(37, 99, 235, 0.05);
             transform: translateY(-2px);
         }
 
@@ -813,7 +883,7 @@ function extractManaValue($card_data) {
         }
 
         .feature-checkbox {
-            background: var(--card-background);
+            background: var(--surface-color);
             border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 1rem;
@@ -839,7 +909,7 @@ function extractManaValue($card_data) {
         }
 
         .deck-item {
-            background: var(--background-color);
+            background: var(--surface-color);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 1rem;
@@ -882,8 +952,8 @@ function extractManaValue($card_data) {
         }
 
         .badge-strategy {
-            background: var(--secondary-color);
-            color: var(--background-color);
+            background: var(--warning-color);
+            color: white;
         }
 
         .deck-stats {
@@ -909,12 +979,6 @@ function extractManaValue($card_data) {
             margin-bottom: 1rem;
         }
 
-        #commanderSelect {
-            background: var(--background-color);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-        }
-
         .color-symbol {
             width: 30px;
             height: 30px;
@@ -928,33 +992,96 @@ function extractManaValue($card_data) {
             border: 2px solid rgba(255,255,255,0.3);
         }
 
-        .color-symbol.white { background: #FFFBD5; color: #000; }
-        .color-symbol.blue { background: #0E68AB; color: #fff; }
-        .color-symbol.black { background: #150B00; color: #fff; }
-        .color-symbol.red { background: #D3202A; color: #fff; }
-        .color-symbol.green { background: #00733E; color: #fff; }
-        .color-symbol.colorless { background: #CAC5C0; color: #000; }
+        .color-symbol.white { background: var(--white-mana); color: #000; }
+        .color-symbol.blue { background: var(--blue-mana); color: #fff; }
+        .color-symbol.black { background: var(--black-mana); color: #fff; }
+        .color-symbol.red { background: var(--red-mana); color: #fff; }
+        .color-symbol.green { background: var(--green-mana); color: #fff; }
+        .color-symbol.colorless { background: var(--colorless); color: #000; }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .two-column {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border-left: 4px solid;
+        }
+
+        .alert-success {
+            background: rgba(5, 150, 105, 0.1);
+            border-color: var(--success-color);
+            color: var(--success-color);
+        }
+
+        .alert-danger {
+            background: rgba(220, 38, 38, 0.1);
+            border-color: var(--danger-color);
+            color: var(--danger-color);
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.8rem;
+        }
+
+        .color-checkbox:hover {
+            border-color: var(--primary-color);
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .color-checkbox input[type="checkbox"]:checked + .color-symbol + span {
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .color-checkbox input[type="checkbox"]:checked {
+            accent-color: var(--primary-color);
+        }
     </style>
 </head>
 <body>
+    <?php include 'includes/navbar.php'; ?>
+    
     <div class="container">
         <div class="main-content">
+            <!-- DEBUG OUTPUT -->
+            <div style="background: #ffeb3b; padding: 1rem; margin: 1rem 0; border-radius: 4px;">
+                <strong>DEBUG INFO:</strong><br>
+                Session User ID: <?= $_SESSION['user_id'] ?? 'NICHT GESETZT' ?><br>
+                Existing Decks Count: <?= count($existing_decks ?? []) ?><br>
+                Success Message: <?= htmlspecialchars($success_message) ?><br>
+                Error Message: <?= htmlspecialchars($error_message) ?><br>
+                PHP Version: <?= phpversion() ?>
+            </div>
+            
             <!-- Page Header -->
             <div class="page-header">
-                <h1><i class="fas fa-magic"></i> Intelligent Deck Builder</h1>
-                <p>Erstellen Sie optimierte MTG-Decks mit KI-unterstützter Analyse</p>
+                <h1 class="page-title">Intelligent Deck Builder</h1>
+                <p class="page-subtitle">Erstellen Sie optimierte MTG-Decks mit KI-unterstützter Analyse</p>
             </div>
 
             <!-- Success/Error Messages -->
             <?php if ($success_message): ?>
                 <div class="alert alert-success">
-                    <i class="fas fa-check-circle"></i> <?= htmlspecialchars($success_message) ?>
+                    <?= htmlspecialchars($success_message) ?>
                 </div>
             <?php endif; ?>
 
             <?php if ($error_message): ?>
                 <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle"></i> <?= htmlspecialchars($error_message) ?>
+                    <?= htmlspecialchars($error_message) ?>
                 </div>
             <?php endif; ?>
 
@@ -962,14 +1089,17 @@ function extractManaValue($card_data) {
                 <!-- Left Column: Deck Builder -->
                 <div>
                     <div class="card">
-                        <h5 style="margin-bottom: 1.5rem;"><i class="fas fa-robot"></i> AI Deck Builder</h5>
+                        <div class="card-header">
+                            AI Deck Builder
+                        </div>
+                        <div class="card-body">
                         
                         <form method="post" id="deckBuilderForm">
                             <input type="hidden" name="action" value="create_deck">
                             
                             <!-- Format Selection -->
                             <div class="form-group">
-                                <label><i class="fas fa-gamepad"></i> Format</label>
+                                <label>Format</label>
                                 <select name="format" class="form-control" required>
                                     <option value="">-- Format wählen --</option>
                                     <option value="Standard">Standard</option>
@@ -984,7 +1114,7 @@ function extractManaValue($card_data) {
 
                             <!-- Deck Size -->
                             <div class="form-group">
-                                <label><i class="fas fa-layer-group"></i> Deck-Größe</label>
+                                <label>Deck-Größe</label>
                                 <select name="deck_size" class="form-control">
                                     <option value="60">60 Karten (Standard)</option>
                                     <option value="40">40 Karten (Limited)</option>
@@ -994,19 +1124,18 @@ function extractManaValue($card_data) {
 
             <!-- Commander Selection (shown when Commander format is selected) -->
             <div class="commander-select" id="commanderSection" style="display: none;">
-                <label><i class="fas fa-crown"></i> Commander <span style="color: #e74c3c;">*</span></label>
-                <select name="commander" id="commanderSelect" class="form-control" required>
+                <label>Commander <span style="color: var(--danger-color);">*</span></label>
+                <select name="commander" id="commanderSelect" class="form-control">
                     <option value="">-- Commander AUSWÄHLEN (PFLICHT) --</option>
                 </select>
                 <small style="color: var(--warning-color); margin-top: 0.5rem; display: block;">
-                    <i class="fas fa-exclamation-triangle"></i> 
                     Commander bestimmt die erlaubten Farben für alle Karten im Deck!
                 </small>
                 
                 <!-- Commander Color Identity Display -->
-                <div id="commanderColorDisplay" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(44, 95, 65, 0.1); border-radius: 6px; border: 1px solid var(--primary-color);">
+                <div id="commanderColorDisplay" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(37, 99, 235, 0.1); border-radius: 6px; border: 1px solid var(--primary-color);">
                     <h6 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">
-                        <i class="fas fa-palette"></i> Erlaubte Farben für dieses Deck:
+                        Erlaubte Farben für dieses Deck:
                     </h6>
                     <div id="colorIdentitySymbols" style="display: flex; gap: 0.5rem; align-items: center;">
                         <!-- Color symbols will be inserted here -->
@@ -1015,27 +1144,58 @@ function extractManaValue($card_data) {
                         Nur Karten mit diesen Farben können dem Deck hinzugefügt werden.
                     </small>
                 </div>
+            </div>
+
+            <!-- Color Selection (shown for Modern/Standard/Pioneer formats) -->
+            <div class="color-selection" id="colorSelectionSection" style="display: none;">
+                <label>Deck-Farben <span style="color: var(--danger-color);">*</span></label>
+                <div class="color-options" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; margin-bottom: 1rem;">
+                    <label class="color-checkbox" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                        <input type="checkbox" name="deck_colors[]" value="W" style="margin: 0;">
+                        <div class="color-symbol white" style="width: 25px; height: 25px; font-size: 0.8rem;">W</div>
+                        <span>Weiß</span>
+                    </label>
+                    <label class="color-checkbox" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                        <input type="checkbox" name="deck_colors[]" value="U" style="margin: 0;">
+                        <div class="color-symbol blue" style="width: 25px; height: 25px; font-size: 0.8rem;">U</div>
+                        <span>Blau</span>
+                    </label>
+                    <label class="color-checkbox" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                        <input type="checkbox" name="deck_colors[]" value="B" style="margin: 0;">
+                        <div class="color-symbol black" style="width: 25px; height: 25px; font-size: 0.8rem;">B</div>
+                        <span>Schwarz</span>
+                    </label>
+                    <label class="color-checkbox" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                        <input type="checkbox" name="deck_colors[]" value="R" style="margin: 0;">
+                        <div class="color-symbol red" style="width: 25px; height: 25px; font-size: 0.8rem;">R</div>
+                        <span>Rot</span>
+                    </label>
+                    <label class="color-checkbox" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                        <input type="checkbox" name="deck_colors[]" value="G" style="margin: 0;">
+                        <div class="color-symbol green" style="width: 25px; height: 25px; font-size: 0.8rem;">G</div>
+                        <span>Grün</span>
+                    </label>
+                </div>
+                <small style="color: var(--text-secondary); margin-top: 0.5rem; display: block;">
+                    Wählen Sie mindestens eine Farbe für Ihr Deck aus. Sie können mehrere Farben kombinieren.
+                </small>
             </div>                            <!-- Strategy Selection -->
                             <div class="form-group">
-                                <label><i class="fas fa-chess"></i> Strategie</label>
+                                <label>Strategie</label>
                                 <div class="strategy-grid">
                                     <a href="#" class="strategy-btn-compact" data-strategy="Aggro">
-                                        <i class="fas fa-fire"></i>
                                         <strong>Aggro</strong>
                                         <small style="display: block; margin-top: 0.5rem;">Schnell & aggressiv</small>
                                     </a>
                                     <a href="#" class="strategy-btn-compact" data-strategy="Control">
-                                        <i class="fas fa-shield-alt"></i>
                                         <strong>Control</strong>
                                         <small style="display: block; margin-top: 0.5rem;">Kontrolle & Card Draw</small>
                                     </a>
                                     <a href="#" class="strategy-btn-compact" data-strategy="Midrange">
-                                        <i class="fas fa-balance-scale"></i>
                                         <strong>Midrange</strong>
                                         <small style="display: block; margin-top: 0.5rem;">Ausgewogen</small>
                                     </a>
                                     <a href="#" class="strategy-btn-compact" data-strategy="Combo">
-                                        <i class="fas fa-cogs"></i>
                                         <strong>Combo</strong>
                                         <small style="display: block; margin-top: 0.5rem;">Synergien & Combos</small>
                                     </a>
@@ -1045,7 +1205,7 @@ function extractManaValue($card_data) {
 
                             <!-- AI Features -->
                             <div class="form-group">
-                                <label><i class="fas fa-brain"></i> AI Features</label>
+                                <label>AI Features</label>
                                 <div class="ai-features">
                                     <label class="feature-checkbox">
                                         <input type="checkbox" name="ai_features[]" value="mana_curve">
@@ -1080,7 +1240,7 @@ function extractManaValue($card_data) {
 
                             <!-- Quality Level -->
                             <div class="form-group">
-                                <label><i class="fas fa-star"></i> Qualitätsstufe</label>
+                                <label>Qualitätsstufe</label>
                                 <select name="quality" class="form-control">
                                     <option value="budget">Budget (Günstige Karten)</option>
                                     <option value="medium" selected>Medium (Ausgewogen)</option>
@@ -1090,25 +1250,28 @@ function extractManaValue($card_data) {
 
                             <!-- Deck Name -->
                             <div class="form-group">
-                                <label><i class="fas fa-tag"></i> Deck Name</label>
+                                <label>Deck Name</label>
                                 <input type="text" name="name" class="form-control" placeholder="Mein neues Deck" required>
                             </div>
 
                             <button type="submit" class="btn btn-primary" style="width: 100%;">
-                                <i class="fas fa-magic"></i> Deck erstellen
+                                Deck erstellen
                             </button>
                         </form>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Right Column: Existing Decks -->
                 <div>
                     <div class="card">
-                        <h5 style="margin-bottom: 1rem;"><i class="fas fa-layer-group"></i> Ihre Decks</h5>
+                        <div class="card-header">
+                            Ihre Decks
+                        </div>
+                        <div class="card-body">
                         
                         <?php if (empty($existing_decks)): ?>
                             <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
-                                <i class="fas fa-plus-circle" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
                                 <p>Noch keine Decks erstellt</p>
                                 <p style="font-size: 0.9rem;">Nutzen Sie den Deck Builder links, um Ihr erstes Deck zu erstellen!</p>
                             </div>
@@ -1127,20 +1290,20 @@ function extractManaValue($card_data) {
                                         </div>
                                         
                                         <div class="deck-stats">
-                                            <span><i class="fas fa-layer-group"></i> <?= $deck['card_count'] ?: 0 ?> unique</span>
-                                            <span><i class="fas fa-clone"></i> <?= $deck['total_cards'] ?: 0 ?> total</span>
-                                            <span><i class="fas fa-calendar"></i> <?= date('d.m.Y', strtotime($deck['created_at'])) ?></span>
+                                            <span><?= $deck['card_count'] ?: 0 ?> unique</span>
+                                            <span><?= $deck['total_cards'] ?: 0 ?> total</span>
+                                            <span><?= date('d.m.Y', strtotime($deck['created_at'])) ?></span>
                                         </div>
                                         
                                         <div class="deck-actions">
                                             <a href="deck_view.php?id=<?= $deck['id'] ?>" class="btn btn-sm btn-primary">
-                                                <i class="fas fa-eye"></i> Ansehen
+                                                Ansehen
                                             </a>
                                             <form method="post" style="display: inline;" onsubmit="return confirm('Deck wirklich löschen?')">
                                                 <input type="hidden" name="action" value="delete_deck">
                                                 <input type="hidden" name="deck_id" value="<?= $deck['id'] ?>">
                                                 <button type="submit" class="btn btn-sm btn-danger">
-                                                    <i class="fas fa-trash"></i>
+                                                    Löschen
                                                 </button>
                                             </form>
                                         </div>
@@ -1148,6 +1311,7 @@ function extractManaValue($card_data) {
                                 <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1155,21 +1319,47 @@ function extractManaValue($card_data) {
     </div>
 
     <script>
+        console.log('Deck Builder JavaScript lädt...');
+        
         // Format change handler
         function handleFormatChange(format) {
             const commanderSection = document.getElementById('commanderSection');
+            const commanderSelect = document.getElementById('commanderSelect');
+            const colorSelectionSection = document.getElementById('colorSelectionSection');
             const deckSizeSelect = document.querySelector('select[name="deck_size"]');
             
             if (format === 'Commander') {
                 commanderSection.style.display = 'block';
+                commanderSelect.setAttribute('required', 'required');
+                colorSelectionSection.style.display = 'none';
+                clearColorSelection();
                 deckSizeSelect.value = '100';
                 loadCommanders();
-            } else {
+            } else if (format === 'Modern' || format === 'Standard' || format === 'Pioneer') {
                 commanderSection.style.display = 'none';
-                if (format === 'Standard' || format === 'Modern' || format === 'Pioneer') {
+                commanderSelect.removeAttribute('required');
+                commanderSelect.value = '';
+                colorSelectionSection.style.display = 'block';
+                deckSizeSelect.value = '60';
+            } else {
+                // Legacy, Vintage, Pauper - keine spezifischen Anforderungen
+                commanderSection.style.display = 'none';
+                commanderSelect.removeAttribute('required');
+                commanderSelect.value = '';
+                colorSelectionSection.style.display = 'none';
+                clearColorSelection();
+                if (format) {
                     deckSizeSelect.value = '60';
                 }
             }
+        }
+
+        // Clear color selection
+        function clearColorSelection() {
+            const colorCheckboxes = document.querySelectorAll('input[name="deck_colors[]"]');
+            colorCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
         }
 
         function loadCommanders() {
@@ -1371,6 +1561,16 @@ function extractManaValue($card_data) {
                 if (deckSize !== 100) {
                     e.preventDefault();
                     alert('Commander-Decks müssen genau 100 Karten haben!');
+                    return;
+                }
+            }
+            
+            // Color validation for Modern, Standard, Pioneer
+            if (format === 'Modern' || format === 'Standard' || format === 'Pioneer') {
+                const selectedColors = document.querySelectorAll('input[name="deck_colors[]"]:checked');
+                if (selectedColors.length === 0) {
+                    e.preventDefault();
+                    alert('Bitte wählen Sie mindestens eine Farbe für Ihr ' + format + '-Deck aus!');
                     return;
                 }
             }

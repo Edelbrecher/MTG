@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Import Test - Erweiterte Syntax</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .example { background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .syntax { background: #fff3cd; padding: 10px; border-radius: 4px; margin: 5px 0; font-family: monospace; }
+        .test-area { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        textarea { width: 100%; height: 150px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 4px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Bulk Import Test - Erweiterte Syntax</h1>
+    
+    <div class="example">
+        <h3>Neue Syntax-Möglichkeiten:</h3>
+        <div class="syntax">Lightning Bolt</div> → Normal
+        <div class="syntax">4 Lightning Bolt</div> → 4x Normal
+        <div class="syntax">Lightning Bolt f</div> → 1x Foil
+        <div class="syntax">Lightning Bolt p</div> → 1x Proxy
+        <div class="syntax">Lightning Bolt p f</div> → 1x Proxy + Foil
+        <div class="syntax">3 Lightning Bolt f</div> → 3x Foil
+        <div class="syntax">2 Black Lotus p</div> → 2x Proxy
+        <div class="syntax">Sol Ring f p</div> → 1x Foil + Proxy
+    </div>
+    
+    <div class="test-area">
+        <h3>Test die neue Funktionalität:</h3>
+        <textarea id="testInput" placeholder="Füge hier Kartennamen ein (einer pro Zeile):
+Lightning Bolt
+4 Counterspell f
+2 Black Lotus p
+Sol Ring p f
+Mana Crypt f"></textarea>
+        <br><br>
+        <button onclick="testParsing()">Parse Test (Lokal)</button>
+        <button onclick="testBulkImport()">Live Import Test</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // Local parsing test
+        function parseCardInput(input) {
+            input = input.trim();
+            
+            const result = {
+                quantity: 1,
+                card_name: '',
+                is_foil: false,
+                is_proxy: false,
+                original_input: input
+            };
+            
+            // Regex Pattern für: [Anzahl] Kartenname [p] [f]
+            const match = input.match(/^(\d+)?\s*(.+?)(\s+[pf\s]*)?$/i);
+            if (match) {
+                // Anzahl extrahieren
+                if (match[1]) {
+                    result.quantity = parseInt(match[1]);
+                }
+                
+                // Kartenname extrahieren
+                let card_part = match[2].trim();
+                
+                // Suffix extrahieren
+                const suffix = (match[3] || '').toLowerCase().trim();
+                
+                // Prüfe auf 'p' und 'f' im Suffix
+                if (suffix.includes('p')) {
+                    result.is_proxy = true;
+                }
+                if (suffix.includes('f')) {
+                    result.is_foil = true;
+                }
+                
+                // Entferne 'p' und 'f' aus dem Kartennamen
+                card_part = card_part.replace(/\s+[pf]\s*$/i, '');
+                card_part = card_part.replace(/\s+[pf]\s+[pf]\s*$/i, '');
+                
+                result.card_name = card_part.trim();
+            } else {
+                result.card_name = input;
+            }
+            
+            return result;
+        }
+
+        function testParsing() {
+            const input = document.getElementById('testInput').value;
+            const lines = input.split('\n').filter(line => line.trim());
+            
+            let html = '<div class="result success"><h4>📊 Parse Results:</h4>';
+            
+            lines.forEach((line, index) => {
+                const parsed = parseCardInput(line);
+                html += `<div style="margin: 10px 0; padding: 10px; background: white; border-radius: 4px;">
+                    <strong>Input:</strong> "${parsed.original_input}"<br>
+                    <strong>→ Kartenname:</strong> "${parsed.card_name}"<br>
+                    <strong>→ Anzahl:</strong> ${parsed.quantity}x<br>
+                    <strong>→ Foil:</strong> ${parsed.is_foil ? '✅ Ja' : '❌ Nein'}<br>
+                    <strong>→ Proxy:</strong> ${parsed.is_proxy ? '✅ Ja' : '❌ Nein'}
+                </div>`;
+            });
+            
+            html += '</div>';
+            document.getElementById('result').innerHTML = html;
+        }
+
+        function testBulkImport() {
+            const input = document.getElementById('testInput').value;
+            
+            if (!input.trim()) {
+                document.getElementById('result').innerHTML = '<div class="result error">Bitte füge zuerst Kartennamen ein!</div>';
+                return;
+            }
+            
+            document.getElementById('result').innerHTML = '<div class="result">🔄 Starte Live-Import...</div>';
+            
+            // Form data für bulk import
+            const formData = new FormData();
+            formData.append('action', 'bulk_import');
+            formData.append('live_mode', 'true');
+            formData.append('card_input', input);
+            formData.append('separator', 'newline');
+            
+            // EventSource für Live-Updates
+            fetch('bulk_import.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.text();
+            })
+            .then(data => {
+                document.getElementById('result').innerHTML = `<div class="result success">
+                    <h4>✅ Import abgeschlossen!</h4>
+                    <p>Überprüfe die collection.php Seite um die importierten Karten zu sehen.</p>
+                    <details>
+                        <summary>Server Response (zum Debuggen)</summary>
+                        <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto;">${data}</pre>
+                    </details>
+                </div>`;
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = `<div class="result error">
+                    <h4>❌ Import Fehler:</h4>
+                    <p>${error.message}</p>
+                </div>`;
+            });
+        }
+    </script>
+</body>
+</html>

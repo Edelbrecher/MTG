@@ -11,6 +11,69 @@ if (!isset($_SESSION['user_id'])) {
 // Get user language preference
 $userLanguage = CardTranslator::getUserLanguage($pdo, $_SESSION['user_id']);
 
+// Function to get all unique creature subtypes from the collection
+function getAllCreatureSubtypes($pdo, $user_id) {
+    $subtypes = [];
+    
+    // Get all cards from user's collection
+    $stmt = $pdo->prepare("SELECT card_data FROM collections WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $cards = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($cards as $card) {
+        $card_data = json_decode($card['card_data'], true);
+        
+        // Check if it's a creature and has type_line
+        if (isset($card_data['type_line'])) {
+            $type_line = $card_data['type_line'];
+            
+            // Only process creatures
+            if (stripos($type_line, 'Creature') !== false) {
+                // Extract subtypes after the dash
+                if (strpos($type_line, '—') !== false) {
+                    $parts = explode('—', $type_line);
+                    if (count($parts) > 1) {
+                        $subtype_part = trim($parts[1]);
+                        // Split subtypes by space and clean them
+                        $creature_subtypes = array_map('trim', explode(' ', $subtype_part));
+                        foreach ($creature_subtypes as $subtype) {
+                            if (!empty($subtype) && strlen($subtype) > 1) {
+                                $subtypes[] = $subtype;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Remove duplicates and sort
+    $subtypes = array_unique($subtypes);
+    sort($subtypes);
+    
+    return $subtypes;
+}
+
+// Function to extract creature subtypes from a type_line
+function extractCreatureSubtypes($type_line) {
+    $subtypes = [];
+    
+    if (strpos($type_line, '—') !== false) {
+        $parts = explode('—', $type_line);
+        if (count($parts) > 1) {
+            $subtype_part = trim($parts[1]);
+            $creature_subtypes = array_map('trim', explode(' ', $subtype_part));
+            foreach ($creature_subtypes as $subtype) {
+                if (!empty($subtype) && strlen($subtype) > 1) {
+                    $subtypes[] = $subtype;
+                }
+            }
+        }
+    }
+    
+    return $subtypes;
+}
+
 // Hilfsfunktion um die richtige Bild-URL zu ermitteln
 function getCardImageUrl($card_data) {
     // Direkte image_url (für ältere Karten)
@@ -59,6 +122,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 $stmt = $pdo->prepare("SELECT * FROM collections WHERE user_id = ? ORDER BY added_at DESC");
 $stmt->execute([$_SESSION['user_id']]);
 $collection = $stmt->fetchAll();
+
+// Get all available creature subtypes for filter dropdown
+$creature_subtypes = getAllCreatureSubtypes($pdo, $_SESSION['user_id']);
 
 // Get collection summary using the optimized view
 $stmt = $pdo->prepare("SELECT unique_cards, total_cards FROM user_collection_summary WHERE user_id = ?");
@@ -912,6 +978,24 @@ $user = $stmt->fetch();
                         </select>
                     </div>
                     
+                    <!-- Creature Subtype Filter -->
+                    <div class="filter-group">
+                        <label for="creature-subtype-filter">🐺 Kreaturentyp</label>
+                        <select id="creature-subtype-filter" onchange="applyFilters()">
+                            <option value="">Alle Kreaturentypen</option>
+                            <?php foreach ($creature_subtypes as $subtype): ?>
+                                <option value="<?= htmlspecialchars($subtype) ?>">
+                                    <?= htmlspecialchars($subtype) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php if (count($creature_subtypes) > 0): ?>
+                            <small style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 4px;">
+                                <?= count($creature_subtypes) ?> Typen verfügbar
+                            </small>
+                        <?php endif; ?>
+                    </div>
+                    
                     <!-- Rarity Filter -->
                     <div class="filter-group">
                         <label for="rarity-filter">💎 Seltenheit</label>
@@ -921,6 +1005,18 @@ $user = $stmt->fetch();
                             <option value="uncommon">🔘 Uncommon</option>
                             <option value="rare">🟡 Rare</option>
                             <option value="mythic">🔴 Mythic</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Proxy/Original Filter -->
+                    <div class="filter-group">
+                        <label for="proxy-filter">🔧 Kartentyp</label>
+                        <select id="proxy-filter" onchange="applyFilters()">
+                            <option value="">Alle Karten</option>
+                            <option value="original">📄 Nur Originale</option>
+                            <option value="proxy">🔧 Nur Proxies</option>
+                            <option value="foil">✨ Nur Foils</option>
+                            <option value="foil-proxy">✨🔧 Foil Proxies</option>
                         </select>
                     </div>
                     
@@ -980,7 +1076,10 @@ $user = $stmt->fetch();
                          data-legendary="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false ? 'true' : 'false'; ?>"
                          data-commander="<?php echo (strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false && strpos(strtolower($card_data['type_line'] ?? ''), 'creature') !== false) ? 'true' : 'false'; ?>"
                          data-tribal="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'tribal') !== false ? 'true' : 'false'; ?>"
-                         data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>">
+                         data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>"
+                         data-subtypes="<?php echo htmlspecialchars(strtolower(implode(' ', extractCreatureSubtypes($card_data['type_line'] ?? '')))); ?>"
+                         data-foil="<?php echo $card['foil'] ? 'true' : 'false'; ?>"
+                         data-proxy="<?php echo $card['proxy'] ? 'true' : 'false'; ?>">
                         <div class="mtg-card-border <?php echo $border_class; ?>"></div>
                         <img src="<?php echo htmlspecialchars(getCardImageUrl($card_data)); ?>" 
                              alt="<?php echo htmlspecialchars($card['card_name']); ?>" 
@@ -1014,6 +1113,18 @@ $user = $stmt->fetch();
                             <!-- Quantity Display (read-only) -->
                             <div class="mtg-card-quantity" style="text-align: center; margin-top: 8px; font-weight: 600; color: var(--primary-color);">
                                 <?php echo $card['quantity']; ?>x vorhanden
+                                
+                                <!-- Foil and Proxy Indicators -->
+                                <?php if ($card['foil'] || $card['proxy']): ?>
+                                    <div style="display: flex; justify-content: center; gap: 4px; margin-top: 4px; font-size: 0.8rem;">
+                                        <?php if ($card['foil']): ?>
+                                            <span style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #333; padding: 2px 6px; border-radius: 10px; font-weight: bold; font-size: 0.7rem;" title="Foil-Karte">✨ FOIL</span>
+                                        <?php endif; ?>
+                                        <?php if ($card['proxy']): ?>
+                                            <span style="background: #e74c3c; color: white; padding: 2px 6px; border-radius: 10px; font-weight: bold; font-size: 0.7rem;" title="Proxy-Karte">🔧 PROXY</span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -1034,6 +1145,7 @@ $user = $stmt->fetch();
                             <th>Seltenheit</th>
                             <th>Set</th>
                             <th>Anzahl</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1049,7 +1161,10 @@ $user = $stmt->fetch();
                                 data-legendary="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false ? 'true' : 'false'; ?>"
                                 data-commander="<?php echo (strpos(strtolower($card_data['type_line'] ?? ''), 'legendary') !== false && strpos(strtolower($card_data['type_line'] ?? ''), 'creature') !== false) ? 'true' : 'false'; ?>"
                                 data-tribal="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'tribal') !== false ? 'true' : 'false'; ?>"
-                                data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>">
+                                data-snow="<?php echo strpos(strtolower($card_data['type_line'] ?? ''), 'snow') !== false ? 'true' : 'false'; ?>"
+                                data-subtypes="<?php echo htmlspecialchars(strtolower(implode(' ', extractCreatureSubtypes($card_data['type_line'] ?? '')))); ?>"
+                                data-foil="<?php echo $card['foil'] ? 'true' : 'false'; ?>"
+                                data-proxy="<?php echo $card['proxy'] ? 'true' : 'false'; ?>">
                                 <td>
                                     <img src="<?php echo htmlspecialchars(getCardImageUrl($card_data)); ?>" 
                                          alt="<?php echo htmlspecialchars($card['card_name']); ?>" 
@@ -1096,6 +1211,20 @@ $user = $stmt->fetch();
                                 </td>
                                 <td class="card-quantity-cell">
                                     <strong><?php echo $card['quantity']; ?>x</strong>
+                                </td>
+                                <td class="card-status-cell">
+                                    <?php if ($card['foil'] || $card['proxy']): ?>
+                                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                                            <?php if ($card['foil']): ?>
+                                                <span style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #333; padding: 1px 4px; border-radius: 8px; font-weight: bold; font-size: 0.7rem; display: inline-block;" title="Foil-Karte">✨ FOIL</span>
+                                            <?php endif; ?>
+                                            <?php if ($card['proxy']): ?>
+                                                <span style="background: #e74c3c; color: white; padding: 1px 4px; border-radius: 8px; font-weight: bold; font-size: 0.7rem; display: inline-block;" title="Proxy-Karte">🔧 PROXY</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <span style="color: #666; font-size: 0.8rem;">—</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -1154,7 +1283,9 @@ $user = $stmt->fetch();
             const searchTerm = document.getElementById('search-input').value.toLowerCase();
             const colorFilter = document.getElementById('color-filter').value;
             const typeFilter = document.getElementById('type-filter').value.toLowerCase();
+            const creatureSubtypeFilter = document.getElementById('creature-subtype-filter').value.toLowerCase();
             const rarityFilter = document.getElementById('rarity-filter').value;
+            const proxyFilter = document.getElementById('proxy-filter').value;
             const cmcFilter = document.getElementById('cmc-filter').value;
             const specialFilter = document.getElementById('special-filter').value;
             
@@ -1199,10 +1330,39 @@ $user = $stmt->fetch();
                     }
                 }
                 
+                // Creature subtype filter
+                if (creatureSubtypeFilter && isVisible) {
+                    const cardSubtypes = item.dataset.subtypes || '';
+                    isVisible = cardSubtypes.toLowerCase().includes(creatureSubtypeFilter);
+                }
+                
                 // Rarity filter
                 if (rarityFilter && isVisible) {
                     const cardRarity = item.dataset.rarity || '';
                     isVisible = cardRarity === rarityFilter;
+                }
+                
+                // Proxy/Original filter
+                if (proxyFilter && isVisible) {
+                    const cardFoil = item.dataset.foil === 'true';
+                    const cardProxy = item.dataset.proxy === 'true';
+                    
+                    switch (proxyFilter) {
+                        case 'original':
+                            isVisible = !cardProxy && !cardFoil;
+                            break;
+                        case 'proxy':
+                            isVisible = cardProxy && !cardFoil;
+                            break;
+                        case 'foil':
+                            isVisible = cardFoil && !cardProxy;
+                            break;
+                        case 'foil-proxy':
+                            isVisible = cardFoil && cardProxy;
+                            break;
+                        default:
+                            break;
+                    }
                 }
                 
                 // CMC filter
@@ -1296,8 +1456,10 @@ $user = $stmt->fetch();
             const filters = [
                 'search-input',
                 'color-filter', 
-                'type-filter', 
-                'rarity-filter', 
+                'type-filter',
+                'creature-subtype-filter',
+                'rarity-filter',
+                'proxy-filter', 
                 'cmc-filter', 
                 'special-filter'
             ];
@@ -1318,6 +1480,7 @@ $user = $stmt->fetch();
             document.getElementById('color-filter').value = '';
             document.getElementById('type-filter').value = '';
             document.getElementById('rarity-filter').value = '';
+            document.getElementById('proxy-filter').value = '';
             document.getElementById('cmc-filter').value = '';
             document.getElementById('special-filter').value = '';
             

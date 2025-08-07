@@ -61,6 +61,14 @@ $recent_activity = [];
                     <a href="card_management.php" class="btn btn-primary" style="margin-left:8px;">Karten verwalten</a>
                 </div>
             </div>
+            <!-- Format-Regelwerk Verwaltung -->
+            <div class="card" style="box-shadow: 0 4px 16px rgba(139,69,19,0.08); border-radius: 14px;">
+                <div class="card-body">
+                    <h3 style="color: #8b4513; font-weight: 600;">📖 Format-Regelwerk</h3>
+                    <p style="color: #374151;">Regelwerke bearbeiten und Sonderformate erstellen.</p>
+                    <a href="format_rules.php" class="btn btn-primary">Regelwerke verwalten</a>
+                </div>
+            </div>
             <!-- Backup & Restore -->
             <div class="card" style="box-shadow: 0 4px 16px rgba(59,130,246,0.08); border-radius: 14px;">
                 <div class="card-body">

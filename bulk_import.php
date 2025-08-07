@@ -94,6 +94,54 @@ function extractCardData($data) {
     ];
 }
 
+// Funktion zum Parsen der erweiterten Bulk-Import-Syntax
+function parseCardInput($input) {
+    $input = trim($input);
+    
+    // Standard-Werte
+    $result = [
+        'quantity' => 1,
+        'card_name' => '',
+        'is_foil' => false,
+        'is_proxy' => false,
+        'original_input' => $input
+    ];
+    
+    // Regex Pattern für: [Anzahl] Kartenname [p] [f]
+    // Erlaubt Reihenfolge: "4 Lightning Bolt p f" oder "Lightning Bolt f p" oder "2 Lightning Bolt p" etc.
+    if (preg_match('/^(\d+)?\s*(.+?)(\s+[pf\s]*)?$/i', $input, $matches)) {
+        // Anzahl extrahieren (wenn vorhanden)
+        if (!empty($matches[1])) {
+            $result['quantity'] = (int)$matches[1];
+        }
+        
+        // Kartenname extrahieren
+        $card_part = trim($matches[2]);
+        
+        // Suffix extrahieren und analysieren (p für proxy, f für foil)
+        $suffix = isset($matches[3]) ? strtolower(trim($matches[3])) : '';
+        
+        // Prüfe auf 'p' und 'f' im Suffix
+        if (strpos($suffix, 'p') !== false) {
+            $result['is_proxy'] = true;
+        }
+        if (strpos($suffix, 'f') !== false) {
+            $result['is_foil'] = true;
+        }
+        
+        // Entferne 'p' und 'f' aus dem Kartennamen, falls sie dort stehen
+        $card_part = preg_replace('/\s+[pf]\s*$/i', '', $card_part);
+        $card_part = preg_replace('/\s+[pf]\s+[pf]\s*$/i', '', $card_part);
+        
+        $result['card_name'] = trim($card_part);
+    } else {
+        // Fallback: Ganzer Input ist Kartenname
+        $result['card_name'] = $input;
+    }
+    
+    return $result;
+}
+
 $results = [];
 $total_processed = 0;
 $total_success = 0;
@@ -307,9 +355,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ]) . "\n\n";
             flush();
             
-            foreach ($card_names as $index => $card_name) {
-                $card_name = trim($card_name);
-                if (empty($card_name)) continue;
+            foreach ($card_names as $index => $card_input) {
+                $card_input = trim($card_input);
+                if (empty($card_input)) continue;
+                
+                // Parse die erweiterte Syntax (z.B. "4 Lightning Bolt p f")
+                $parsed = parseCardInput($card_input);
+                $card_name = $parsed['card_name'];
+                $quantity = $parsed['quantity'];
+                $is_foil = $parsed['is_foil'];
+                $is_proxy = $parsed['is_proxy'];
                 
                 echo "data: " . json_encode([
                     'type' => 'info',
@@ -364,43 +419,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 flush();
                 
                 try {
-                    // Prüfen ob Karte bereits in Sammlung existiert
-                    $stmt = $pdo->prepare("SELECT id, quantity FROM collections WHERE user_id = ? AND card_name = ?");
-                    $stmt->execute([$_SESSION['user_id'], $card_data['name']]);
+                    // Prüfen ob Karte bereits in Sammlung existiert (mit foil/proxy Status)
+                    $stmt = $pdo->prepare("SELECT id, quantity FROM collections WHERE user_id = ? AND card_name = ? AND foil = ? AND proxy = ?");
+                    $stmt->execute([$_SESSION['user_id'], $card_data['name'], $is_foil ? 1 : 0, $is_proxy ? 1 : 0]);
                     $existing = $stmt->fetch();
                     
                     $collection_id = null;
                     
                     if ($existing) {
                         // Anzahl erhöhen
-                        $new_quantity = $existing['quantity'] + 1;
+                        $new_quantity = $existing['quantity'] + $quantity;
                         $stmt = $pdo->prepare("UPDATE collections SET quantity = ?, card_data = ? WHERE id = ?");
                         $stmt->execute([$new_quantity, json_encode($card_data), $existing['id']]);
                         $collection_id = $existing['id'];
                         
+                        $status_text = '';
+                        if ($is_foil) $status_text .= ' (Foil)';
+                        if ($is_proxy) $status_text .= ' (Proxy)';
+                        
                         echo "data: " . json_encode([
                             'type' => 'success',
-                            'message' => "📈 Anzahl erhöht: '{$card_data['name']}' (jetzt {$new_quantity}x)",
+                            'message' => "📈 Anzahl erhöht: '{$card_data['name']}'{$status_text} (jetzt {$new_quantity}x)",
                             'timestamp' => date('H:i:s')
                         ]) . "\n\n";
                         flush();
                     } else {
                         // Neue Karte hinzufügen
-                        $stmt = $pdo->prepare("INSERT INTO collections (user_id, card_name, card_data, quantity) VALUES (?, ?, ?, 1)");
-                        $stmt->execute([$_SESSION['user_id'], $card_data['name'], json_encode($card_data)]);
+                        $stmt = $pdo->prepare("INSERT INTO collections (user_id, card_name, card_data, quantity, foil, proxy) VALUES (?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$_SESSION['user_id'], $card_data['name'], json_encode($card_data), $quantity, $is_foil ? 1 : 0, $is_proxy ? 1 : 0]);
                         $collection_id = $pdo->lastInsertId();
+                        
+                        $status_text = '';
+                        if ($is_foil) $status_text .= ' (Foil)';
+                        if ($is_proxy) $status_text .= ' (Proxy)';
                         
                         echo "data: " . json_encode([
                             'type' => 'success',
-                            'message' => "➕ Neue Karte hinzugefügt: '{$card_data['name']}'",
+                            'message' => "➕ Neue Karte hinzugefügt: '{$card_data['name']}'{$status_text} ({$quantity}x)",
                             'timestamp' => date('H:i:s')
                         ]) . "\n\n";
                         flush();
                     }
                     
                     // Import-Tracking hinzufügen
-                    $stmt = $pdo->prepare("INSERT INTO import_cards (import_session_id, user_id, card_name, quantity, collection_id, import_order, status) VALUES (?, ?, ?, 1, ?, ?, 'success')");
-                    $stmt->execute([$import_session_id, $_SESSION['user_id'], $card_data['name'], $collection_id, $index + 1]);
+                    $stmt = $pdo->prepare("INSERT INTO import_cards (import_session_id, user_id, card_name, quantity, collection_id, import_order, status) VALUES (?, ?, ?, ?, ?, ?, 'success')");
+                    $stmt->execute([$import_session_id, $_SESSION['user_id'], $card_data['name'], $quantity, $collection_id, $index + 1]);
                     
                     $total_success++;
                     
@@ -415,7 +478,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     
                     // Fehlgeschlagene Karte für Feedback sammeln
                     $failed_cards[] = [
-                        'input' => $card_name,
+                        'input' => $parsed['original_input'],
                         'reason' => 'Datenbankfehler: ' . $e->getMessage(),
                         'suggestions' => []
                     ];
